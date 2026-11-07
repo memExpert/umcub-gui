@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "umcub-gui"
+version = "0.0.1"
+description = "Desktop flasher for devices running the umcub bootloader"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+dependencies = [
+  "PySide6>=6.6",
+  # The host library of the umcub repository; a tag once the library has the GUI's changes.
+  "umcub @ git+https://github.com/memExpert/umcub.git@v0.1.0#subdirectory=tools/host",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-qt>=4.4"]
+
+[project.gui-scripts]
+umcub-gui = "umcub_gui.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["umcub_gui*"]
+
+[tool.setuptools.package-data]
+umcub_gui = ["translations/*.qm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
