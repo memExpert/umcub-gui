@@ -18,7 +18,7 @@ arrive signed (and encrypted, if used) from the firmware build.
 |---|---|
 | Language / UI | Python, PySide6 (Qt 6, LGPL) |
 | Device logic | the `umcub` host library of the umcub repository; the GUI holds no protocol code |
-| Repository | separate GitHub repository `umcub-gui`; depends on `umcub` by a tagged git URL (`subdirectory=tools/host`) |
+| Repository | separate GitHub repository `umcub-gui`; depends on `umcub` by the source archive of a tag (`subdirectory=tools/host`; a git URL would clone all submodules) |
 | OS | Linux and Windows; macOS not planned |
 | Users | firmware developers, production operators, service engineers, end customers; UI roles show what a role needs |
 | Custom adapters | Python plugins: a plugin folder (works in the installer build) and pip packages (entry points) |
