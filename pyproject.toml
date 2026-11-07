@@ -13,7 +13,7 @@ dependencies = [
   "PySide6>=6.6",
   # The host library of the umcub repository, from the tag's source archive: a git URL would clone every
   # submodule of umcub (MCUboot, mbedTLS, ST drivers), and on Windows some of their paths are too long.
-  "umcub @ https://github.com/memExpert/umcub/archive/refs/tags/v0.1.0.zip#subdirectory=tools/host",
+  "umcub @ https://github.com/memExpert/umcub/archive/refs/tags/v0.1.1.zip#subdirectory=tools/host",
 ]
 
 [project.optional-dependencies]
