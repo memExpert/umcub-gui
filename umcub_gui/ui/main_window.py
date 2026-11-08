@@ -1,29 +1,34 @@
-"""Main window: one form (connection, image, upload) and the history tab. Device work runs as app jobs."""
+"""Main window: the device table (one row per device, each with its image) under the shared adapter, key files and
+upload options, and the history tab. Device work runs as app jobs."""
 import time
 
 import umcub
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QAction, QIntValidator
-from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-                               QLineEdit, QMainWindow, QPlainTextEdit, QProgressBar, QPushButton, QRadioButton,
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction, QColor
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout,
+                               QHeaderView, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QProgressBar, QPushButton,
                                QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import __version__
-from ..app.jobs import AdaptersJob, ConnectJob, DiscoverJob, FlashJob, FlashOptions, Target
+from ..app.batch import BatchJob, Row
+from ..app.jobs import AdaptersJob, ConnectJob, DiscoverJob, FlashOptions, Target
 from ..app.settings import Session
 from .settings_dialog import SettingsDialog
 
 OK_STYLE, ERROR_STYLE = "color: #1a7f37; font-weight: bold", "color: #cf222e; font-weight: bold"
+OK_COLOR, ERROR_COLOR = QColor("#1a7f37"), QColor("#cf222e")
 
 
 class MainWindow(QMainWindow):
-    job_finished = Signal(object)       # every job's Result once the window has shown it (tests wait on it)
+    job_finished = Signal(object)       # every job's result once the window has shown it (tests wait on it)
+    COL_CHECK, COL_ADAPTER, COL_NODE, COL_UID, COL_BOARD, COL_PROTOCOL, COL_IMAGE, COL_PROGRESS, COL_STATUS = range(9)
 
     def __init__(self, settings, history):
         super().__init__()
         self.settings, self.history = settings, history
         self.job = None
-        self.identity = None            # of the device the last connect / flash reached
+        self.failed = []                # table rows the last flash run did not finish
+        self.identity = None            # of the device the last connect reached
         self.setWindowTitle(self.tr("umcub {0}").format(__version__))
         tabs = QTabWidget()
         tabs.addTab(self._flash_tab(), self.tr("Flash"))
@@ -32,7 +37,7 @@ class MainWindow(QMainWindow):
         settings_action = QAction(self.tr("Settings..."), self)
         settings_action.triggered.connect(self.open_settings)
         self.menuBar().addAction(settings_action)
-        self.resize(820, 640)
+        self.resize(1000, 700)
         self._restore(settings.session())
         self.reload_history()
 
@@ -43,23 +48,8 @@ class MainWindow(QMainWindow):
         self.adapter.setMinimumWidth(380)
         self.refresh_button = QPushButton(self.tr("Refresh"), clicked=self.refresh)
         self.discover_button = QPushButton(self.tr("Discover"), clicked=self.discover)
-        self.devices = QComboBox()
-        self.devices.currentIndexChanged.connect(self._device_chosen)
-        self.node = QLineEdit(placeholderText=self.tr("link node / CAN node"))
-        self.node.setValidator(QIntValidator(0, 65535))
-        self.uid = QLineEdit(placeholderText=self.tr("UID of an unassigned link device (hex)"))
         self.admin_key = QLineEdit(placeholderText=self.tr("SECURE: admin key (PEM, private)"))
         self.device_key = QLineEdit(placeholderText=self.tr("SECURE: device key (PEM, public)"))
-        self.protocol_smp = QRadioButton("SMP")
-        self.protocol_lite = QRadioButton(self.tr("lite (bootloaders without SMP)"))
-        group = QButtonGroup(self)
-        group.addButton(self.protocol_smp)
-        group.addButton(self.protocol_lite)
-        self.connect_button = QPushButton(self.tr("Connect"), clicked=self.check_device)
-        self.device_info = QLabel()
-        self.image = QLineEdit()
-        self.image.textChanged.connect(self._show_image)
-        self.image_info = QLabel()
         self.slot = QComboBox()
         self.slot.addItem(self.tr("Primary slot"), "primary")
         self.slot.addItem(self.tr("Secondary slot"), "secondary")
@@ -69,29 +59,46 @@ class MainWindow(QMainWindow):
         self.mark.addItem(self.tr("Permanent"), "permanent")
         self.slot.currentIndexChanged.connect(lambda: self.mark.setEnabled(self.slot.currentData() == "secondary"))
         self.reset = QCheckBox(self.tr("Reset after upload"))
-        self.flash_button = QPushButton(self.tr("Flash"), clicked=self.flash)
+
+        self.table = QTableWidget(0, 9)
+        self.table.setHorizontalHeaderLabels(["", self.tr("Adapter"), self.tr("Node"), self.tr("UID"),
+                                              self.tr("Board"), self.tr("Protocol"), self.tr("Image"),
+                                              self.tr("Progress"), self.tr("Status")])
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.edit_triggers = self.table.editTriggers()
+        header = self.table.horizontalHeader()
+        for col in (self.COL_CHECK, self.COL_NODE, self.COL_BOARD, self.COL_STATUS):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(self.COL_IMAGE, QHeaderView.ResizeMode.Stretch)
+        self.table.currentCellChanged.connect(lambda *_: self._show_image())
+        self.table.itemChanged.connect(lambda item: item.column() == self.COL_IMAGE and self._show_image())
+        self.add_button = QPushButton(self.tr("Add"), clicked=self.add_row)
+        self.remove_button = QPushButton(self.tr("Remove"), clicked=self.remove_rows)
+        self.image_button = QPushButton(self.tr("Image..."), clicked=self.pick_image)
+        self.connect_button = QPushButton(self.tr("Connect"), clicked=self.check_device)
+        self.device_info = QLabel()
+        self.image_info = QLabel()
+
+        self.flash_button = QPushButton(self.tr("Flash checked"), clicked=self.flash)
+        self.retry_button = QPushButton(self.tr("Retry failed"), enabled=False, clicked=self.retry)
         self.cancel_button = QPushButton(self.tr("Cancel"), enabled=False, clicked=lambda: self.job.cancel())
-        self.progress = QProgressBar()
         self.result = QLabel()
         self.log = QPlainTextEdit(readOnly=True)
 
         form = QFormLayout()
-        form.addRow(self.tr("Adapter"), _row(self.adapter, self.refresh_button))
-        form.addRow(self.tr("Devices"), _row(self.devices, self.discover_button))
-        form.addRow(self.tr("Node"), _row(self.node, QLabel(self.tr("UID")), self.uid))
+        form.addRow(self.tr("Adapter"), _row(self.adapter, self.refresh_button, self.discover_button))
         form.addRow(self.tr("Admin key"), _row(self.admin_key, self._browse(self.admin_key, "*.pem")))
         form.addRow(self.tr("Device key"), _row(self.device_key, self._browse(self.device_key, "*.pem")))
-        form.addRow(self.tr("Protocol"), _row(self.protocol_smp, self.protocol_lite, self.connect_button))
-        form.addRow(self.tr("Device"), self.device_info)
-        form.addRow(self.tr("Image"), _row(self.image, self._browse(self.image, "*.bin")))
-        form.addRow("", self.image_info)
         form.addRow(self.tr("Upload"), _row(self.slot, self.mark, self.reset))
-        form.addRow("", _row(self.flash_button, self.cancel_button))
         box = QVBoxLayout()
         box.addLayout(form)
-        box.addWidget(self.progress)
+        box.addWidget(_row(self.add_button, self.remove_button, self.image_button, self.connect_button))
+        box.addWidget(self.table, 3)
+        box.addWidget(self.device_info)
+        box.addWidget(self.image_info)
+        box.addWidget(_row(self.flash_button, self.retry_button, self.cancel_button))
         box.addWidget(self.result)
-        box.addWidget(self.log)
+        box.addWidget(self.log, 1)
         w = QWidget()
         w.setLayout(box)
         return w
@@ -110,57 +117,126 @@ class MainWindow(QMainWindow):
                 edit.setText(path)
         return QPushButton("...", clicked=pick)
 
+    # --- the device table --------------------------------------------------------------------------------------
+
+    def _append(self, r, board=""):
+        i = self.table.rowCount()
+        self.table.insertRow(i)
+        check = QTableWidgetItem()
+        check.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+        check.setCheckState(Qt.CheckState.Checked if r.checked else Qt.CheckState.Unchecked)
+        self.table.setItem(i, self.COL_CHECK, check)
+        for col, text in ((self.COL_ADAPTER, r.spec), (self.COL_NODE, "" if r.node is None else str(r.node)),
+                          (self.COL_UID, r.uid), (self.COL_IMAGE, r.image)):
+            self.table.setItem(i, col, QTableWidgetItem(text))
+        for col, text in ((self.COL_BOARD, board), (self.COL_STATUS, "")):
+            item = QTableWidgetItem(text)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(i, col, item)
+        protocol = QComboBox()
+        protocol.addItem("SMP", "smp")
+        protocol.addItem(self.tr("lite"), "lite")
+        protocol.setCurrentIndex(max(0, protocol.findData(r.protocol)))
+        self.table.setCellWidget(i, self.COL_PROTOCOL, protocol)
+        self.table.setCellWidget(i, self.COL_PROGRESS, QProgressBar())
+
+    def rows(self):
+        out = []
+        for i in range(self.table.rowCount()):
+            node = self.table.item(i, self.COL_NODE).text().strip()
+            out.append(Row(self.table.item(i, self.COL_ADAPTER).text().strip(), int(node) if node.isdigit() else None,
+                           self.table.item(i, self.COL_UID).text().strip(),
+                           self.table.cellWidget(i, self.COL_PROTOCOL).currentData(),
+                           self.table.item(i, self.COL_IMAGE).text().strip(),
+                           self.table.item(i, self.COL_CHECK).checkState() == Qt.CheckState.Checked))
+        return out
+
+    def set_rows(self, rows):
+        self._forget_failed()
+        self.table.setRowCount(0)
+        for r in rows:
+            self._append(r)
+
+    def set_image(self, indexes, path):
+        for i in indexes:
+            self.table.item(i, self.COL_IMAGE).setText(path)
+
+    def status(self, i):
+        return self.table.item(i, self.COL_STATUS).text()
+
+    def _set_status(self, i, ok, text):
+        item = self.table.item(i, self.COL_STATUS)
+        item.setText(text)
+        item.setForeground(OK_COLOR if ok else ERROR_COLOR)
+
+    def _selected(self):
+        return sorted({ix.row() for ix in self.table.selectedIndexes()})
+
+    def add_row(self):
+        self._append(Row(self.adapter_spec(), None, "", "smp", ""))
+
+    def remove_rows(self):
+        self._forget_failed()
+        for i in reversed(self._selected()):
+            self.table.removeRow(i)
+
+    def _forget_failed(self):
+        """The failed rows are indexes: they mean nothing once rows go."""
+        self.failed = []
+        self.retry_button.setEnabled(False)
+
+    def pick_image(self):
+        path, _ = QFileDialog.getOpenFileName(self, filter="*.bin")
+        if path:
+            self.set_image(self._selected() or [self.table.currentRow()], path)
+
     # --- session -----------------------------------------------------------------------------------------------
 
     def _restore(self, s):
         self.adapter.setEditText(s.adapter)
-        self.node.setText("" if s.node is None else str(s.node))
-        self.uid.setText(s.uid)
         self.admin_key.setText(s.admin_key)
         self.device_key.setText(s.device_key)
-        (self.protocol_lite if s.protocol == "lite" else self.protocol_smp).setChecked(True)
-        self.image.setText(s.image)
         self.slot.setCurrentIndex(max(0, self.slot.findData(s.slot)))
         self.mark.setCurrentIndex(max(0, self.mark.findData(s.mark)))
         self.mark.setEnabled(s.slot == "secondary")
         self.reset.setChecked(s.reset)
+        self.set_rows(s.rows)
 
     def session(self):
-        return Session(adapter=self.adapter_spec(), node=int(self.node.text()) if self.node.text() else None,
-                       uid=self.uid.text().strip(), admin_key=self.admin_key.text(), device_key=self.device_key.text(),
-                       protocol="lite" if self.protocol_lite.isChecked() else "smp", image=self.image.text(),
+        return Session(adapter=self.adapter_spec(), admin_key=self.admin_key.text(), device_key=self.device_key.text(),
                        slot=self.slot.currentData(), mark=self.mark.currentData() if self.mark.isEnabled() else "",
-                       reset=self.reset.isChecked())
+                       reset=self.reset.isChecked(), rows=self.rows())
 
     def adapter_spec(self):
         i = self.adapter.findText(self.adapter.currentText())
         return self.adapter.itemData(i) if i >= 0 and self.adapter.itemData(i) else self.adapter.currentText().strip()
 
-    def target(self):
-        s = self.session()
-        return Target(s.adapter, s.node, s.uid, s.admin_key, s.device_key)
-
     # --- actions -----------------------------------------------------------------------------------------------
 
     def _set_busy(self, busy, cancellable=False):
-        for b in (self.flash_button, self.discover_button, self.connect_button, self.refresh_button):
+        """While a job runs the table keeps its rows: a run refers to them by index."""
+        for b in (self.flash_button, self.discover_button, self.connect_button, self.refresh_button,
+                  self.add_button, self.remove_button, self.image_button):
             b.setEnabled(not busy)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers if busy else self.edit_triggers)
+        for i in range(self.table.rowCount()):
+            self.table.cellWidget(i, self.COL_PROTOCOL).setEnabled(not busy)
+        self.retry_button.setEnabled(not busy and bool(self.failed))
         self.cancel_button.setEnabled(busy and cancellable)
 
     def _run(self, job, on_done):
         self.job = job
-        self._set_busy(True, isinstance(job, FlashJob))
-        job.signals.log.connect(self.log.appendPlainText)
+        self._set_busy(True)
         job.signals.finished.connect(lambda res: self._finished(res, on_done))
         job.start()
 
     def _finished(self, res, on_done):
+        self.job = None
         self._set_busy(False)
         if res.ok:
             on_done(res.value)
         else:
-            self.show_result(False, self.tr("Cancelled") if res.cancelled else self.tr("Error: {0}").format(res.error_text))
-        self.job = None
+            self.show_result(False, self.tr("Error: {0}").format(res.error_text))
         self.job_finished.emit(res)
 
     def show_result(self, ok, text):
@@ -181,56 +257,97 @@ class MainWindow(QMainWindow):
         self._run(AdaptersJob(), done)
 
     def discover(self):
-        def done(devices):
-            self.devices.clear()
-            for d in devices:
-                self.devices.addItem(f"node {d['addr']}   uid {d['uid']}   {umcub.board_label(d['board_type'])}", d)
-            self.show_result(True, self.tr("{0} device(s)").format(len(devices)))
-        self._run(DiscoverJob(self.adapter_spec()), done)
+        spec = self.adapter_spec()
 
-    def _device_chosen(self, i):
-        d = self.devices.itemData(i)
-        if d:
-            self.node.setText(str(d["addr"]) if d["addr"] else "")
-            self.uid.setText("" if d["addr"] else d["uid"])
+        def done(devices):
+            known = {(r.spec, r.node, r.uid): i for i, r in enumerate(self.rows())}
+            for d in devices:
+                node, uid = (d["addr"] or None, "" if d["addr"] else d["uid"]) if "uid" in d else (d["addr"], "")
+                board = umcub.board_label(d["board_type"]) if "board_type" in d else ""
+                i = known.get((spec, node, uid))
+                if i is None:
+                    self._append(Row(spec, node, uid, d.get("protocol", "smp"), ""), board)
+                else:
+                    self.table.item(i, self.COL_BOARD).setText(board)
+            self.show_result(True, self.tr("{0} device(s)").format(len(devices)))
+        self._run(DiscoverJob(spec), done)
 
     def check_device(self):
+        i = self.table.currentRow()
+        if i < 0:
+            return
+        r = self.rows()[i]
+
         def done(identity):
             self.identity = identity
+            if identity:
+                self.table.item(i, self.COL_BOARD).setText(umcub.board_label(identity["board_type"]))
             self.device_info.setText(_describe(identity) if identity else self.tr("connected (no link identity)"))
             self._show_image()
             self.show_result(True, self.tr("Connected"))
-        self.settings.save_session(self.session())
-        self._run(ConnectJob(self.target()), done)
+        self._run(ConnectJob(Target(r.spec, r.node, r.uid, self.admin_key.text(), self.device_key.text())), done)
 
     def flash(self):
+        self._flash([i for i, r in enumerate(self.rows()) if r.checked])
+
+    def retry(self):
+        self._flash(self.failed)
+
+    def _flash(self, indexes):
         s = self.session()
         self.settings.save_session(s)
-        self.progress.setValue(0)
-        job = FlashJob(self.target(), s.image, FlashOptions(s.protocol, s.slot, s.mark, s.reset), self.history)
-        job.signals.progress.connect(self._progress)
+        run = []
+        for i in indexes:
+            self.table.cellWidget(i, self.COL_PROGRESS).setValue(0)
+            if s.rows[i].image:
+                run.append(i)
+                self._set_status(i, True, "")
+            else:
+                self._set_status(i, False, self.tr("no image"))
+        self.failed = [i for i in indexes if i not in run]
+        job = BatchJob([s.rows[i] for i in run], s.admin_key, s.device_key,
+                       FlashOptions(slot=s.slot, mark=s.mark, reset=s.reset), self.history)
+        job.signals.row_progress.connect(lambda k, done, total: _progress(
+            self.table.cellWidget(run[k], self.COL_PROGRESS), done, total))
+        job.signals.row_finished.connect(lambda k, res: self._row_done(run[k], res))
+        job.signals.finished.connect(self._batch_done)
+        self.job = job
+        self._set_busy(True, cancellable=True)
+        job.start()
 
-        def done(checked):
-            self.identity = job.identity
-            if job.identity:
-                self.device_info.setText(_describe(job.identity))
-            how = {"verify": self.tr("checked: valid (MCUboot validation on the device)"),
-                   "hash": self.tr("checked: SHA-256 matches"),
-                   None: self.tr("not checked (lite upload, or the bootloader cannot check this image)")}[checked]
-            self.show_result(True, self.tr("OK: {0} uploaded, {1}").format(job.img.version, how))
+    def _row_done(self, i, res):
+        how = {"verify": self.tr("checked: valid"), "hash": self.tr("checked: SHA-256 matches"),
+               None: self.tr("not checked")}
+        if res.ok:
+            text = self.tr("OK, {0}").format(how[res.value])
+        else:
+            text = self.tr("cancelled") if res.cancelled else res.error_text
+            self.failed.append(i)
+        self._set_status(i, res.ok, text)
+        r = self.rows()[i]
+        self.log.appendPlainText(f"{time.strftime('%H:%M:%S')} {r.spec} "
+                                 + (f"node {r.node}" if r.node is not None else f"uid {r.uid}") + f": {text}")
 
-        job.signals.finished.connect(lambda res: self.reload_history())
-        self._run(job, done)
-
-    def _progress(self, done, total):
-        self.progress.setMaximum(total)
-        self.progress.setValue(done)
+    def _batch_done(self, results):
+        self.job = None
+        self.failed.sort()
+        ok = sum(r.ok for r in results)
+        cancelled = sum(r.cancelled for r in results)
+        failed = len(self.failed) - cancelled
+        text = self.tr("{0} ok, {1} failed").format(ok, failed) + \
+            (self.tr(", {0} cancelled").format(cancelled) if cancelled else "")
+        self.show_result(not self.failed, text)
+        self._set_busy(False)
+        self.reload_history()
+        self.job_finished.emit(results)
 
     def _show_image(self):
+        i = self.table.currentRow()
+        path = self.table.item(i, self.COL_IMAGE).text().strip() if i >= 0 else ""
         try:
-            img = umcub.Image.load(self.image.text())
+            img = umcub.Image.load(path)
         except umcub.UmcubError as e:
-            self.image_info.setText(str(e) if self.image.text() else "")
+            self.image_info.setText(str(e) if path else "")
             return
         text = f"{img.version}   " + (self.tr("board {0}").format(umcub.board_label(img.board_type))
                                       if img.board_type is not None else self.tr("no board type"))
@@ -259,6 +376,11 @@ class MainWindow(QMainWindow):
     def closeEvent(self, e):
         self.settings.save_session(self.session())
         super().closeEvent(e)
+
+
+def _progress(bar, done, total):
+    bar.setMaximum(total)
+    bar.setValue(done)
 
 
 def _describe(i):

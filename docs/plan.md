@@ -101,7 +101,7 @@ umcub-gui (separate repository)
 umcub host library (umcub repository, tools/host/umcub)
   adapters    list of adapters: serial ports, CAN configs, network interfaces, plugins     new
   transports  registry: scheme -> class, plugins by entry points / folder                   new
-  bus hub     one reader per shared port / CAN bus, frames routed by node                   new
+  parallel    one shared python-can bus per CAN channel; exclusive_key(): what takes turns   new
   device, link, smp, lite                                                                   exist
   flash       upload with checks; SMP or lite given by the caller                           new
   tap         callback for every frame sent / received (log, sniffer)                       new
@@ -109,11 +109,10 @@ umcub host library (umcub repository, tools/host/umcub)
 
 - Threads: library calls block; every device job runs in its own worker thread and reports progress through Qt
   signals. `Smp` already owns one asyncio loop per instance, so one `Smp` per thread works.
-- Parallel upload on one bus: today every `Link` reads the port itself and every `IsoTp` opens its own `can.Bus`.
-  Two sessions on one serial port would take each other's frames, and single-handle CAN drivers (e.g. PCAN on
-  Windows) cannot be opened twice. The bus hub owns the port / bus and routes frames by source address (link) or CAN
-  ID (ISO-TP stacks on one notifier). The gain on a shared half-duplex bus comes from the devices' flash erase / write
-  time overlapping, not from more bus bandwidth: to be measured.
+- Several devices (decided): a serial port is one half-duplex bus (RS485 has no arbitration, a device answers after
+  writing its flash), so its devices take turns; CAN and UDP devices run in parallel. The library tells which is which
+  (`umcub.exclusive_key(spec)`) and shares one python-can bus per CAN channel (single-handle drivers such as PCAN on
+  Windows open a channel once); the app runs one thread per medium, the rows of a medium in turn.
 - Errors: the library raises `UmcubError` subclasses with English text. For translations they also carry a stable
   code and parameters; the GUI translates by code and shows the text as a fallback.
 - Translations: Qt Linguist `.ts` sources, compiled `.qm` files in a `translations/` folder next to the app, loaded
@@ -131,7 +130,7 @@ In order; each with host tests (and the CLI uses them too):
    point group `umcub.transports` and a plugin folder argument.
 2. `umcub.adapters()`: detected adapters with a display name and a ready connection string (pyserial `list_ports`
    with VID / PID, `can.detect_available_configs()`, network interfaces, plugin entries).
-3. Bus hub for shared serial ports and CAN buses: several `Device`s on one connection, frames routed by node.
+3. Several devices: one shared bus per CAN channel, `exclusive_key()` for what must take turns (a serial port).
 4. `flash()`: one upload call (protocol given by the caller) with progress, cancel, board type check before and a
    check without readback after.
 5. Frame tap: an optional callback on every frame (direction, kind, bytes, time); `sniff()` becomes a tap user that
@@ -143,8 +142,8 @@ In order; each with host tests (and the CLI uses them too):
 9. Board name catalog: `load_board_names(path)` -> {board_type: name} and a lookup that falls back to hex, so
    the CLI shows the same names (`umcub discover --names <file>`). JSON (standard library), one name per board
    type, no revision; kept by the user next to their images, e.g. `{"0x00010002": "Pump controller"}`.
-10. CAN discovery: none today (CAN selects a node by address); e.g. probe a range of node addresses with a short SMP
-   echo: to be decided.
+10. CAN discovery: `discover()` on CAN asks nodes 0..7 (the default IDs) an SMP echo, else a lite frame of no known
+   kind.
 
 ## Testing
 
@@ -160,7 +159,8 @@ In order; each with host tests (and the CLI uses them too):
 1. Library: registry, adapters, error codes, tap, `flash()`, extras, first tag. Done: umcub v0.2.0.
 2. GUI skeleton: repository, CI (Linux + Windows), adapter list, connect, upload one device, history. Done, with link
    discovery (a Discover button filling a device list) and the Settings dialog (board names, plugin folder).
-3. Bus hub and parallel upload; a discovery screen for many devices.
+3. Several devices: the device table (each row its own image), serial rows in turn and CAN / UDP in parallel,
+   failed rows retried; CAN discovery. Done: umcub v0.3.0.
 4. Slots, verify, confirm, readback; roles.
 5. Log, sniffer, console; translations; installers; Windows hardware check.
 
@@ -169,4 +169,3 @@ In order; each with host tests (and the CLI uses them too):
 - How the service role is unlocked (password, key file, server account): with colleagues.
 - Whether readback must be refused per key on the device (two admin keys, a firmware change with a size cost).
 - USB DFU: library implementation (pyusb) or `dfu-util`; WinUSB on Windows.
-- CAN discovery.

@@ -43,7 +43,6 @@ class Result:
 
 class Signals(QObject):
     progress = Signal(int, int)         # done, total
-    log = Signal(str)
     finished = Signal(object)           # Result
 
 
@@ -54,9 +53,10 @@ class Job:
         self.signals = Signals()
 
     def start(self):
-        threading.Thread(target=self._main, daemon=True).start()
+        threading.Thread(target=lambda: self.signals.finished.emit(self.execute()), daemon=True).start()
 
-    def _main(self):
+    def execute(self):
+        """run() and done() in the calling thread; the Result."""
         try:
             res = Result(True, self.run())
         except umcub.Cancelled as e:
@@ -66,7 +66,7 @@ class Job:
         except Exception as e:          # e.g. OSError of an adapter unplugged mid-transfer: still a finished job
             res = Result(False, error_code="error", error_text=f"{type(e).__name__}: {e}")
         self.done(res)
-        self.signals.finished.emit(res)
+        return res
 
     def run(self):
         raise NotImplementedError
@@ -123,7 +123,6 @@ class FlashJob(Job):
         o = self.options
         with self.connect(self.target) as dev:
             self.identity = dev.identity
-            self.signals.log.emit(f"connected: {self.target.spec}")
             return umcub.flash(dev, self.img, o.protocol, slot=None if o.slot == "primary" else o.slot,
                                test=o.mark == "test", permanent=o.mark == "permanent", reset=o.reset,
                                progress=self.signals.progress.emit, cancel=self.cancel_event)

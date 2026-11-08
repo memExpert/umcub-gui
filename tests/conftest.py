@@ -9,8 +9,8 @@ def qsettings(tmp_path):
 
 
 class FakeDevice:
-    def __init__(self, identity=None):
-        self.identity = identity
+    def __init__(self, identity, spec, node):
+        self.identity, self.spec, self.node = identity, spec, node
 
     def __enter__(self):
         return self
@@ -21,26 +21,45 @@ class FakeDevice:
 
 @pytest.fixture
 def fake_umcub(monkeypatch):
-    """The host library calls the app makes, recorded; tests set the answers."""
+    """The host library calls the app makes, recorded; tests set the answers. answers["delay"] makes each upload
+    take that long; answers["most_at_once"] counts the uploads that ran together per device string;
+    answers["fail_nodes"]: nodes whose upload fails (flash.invalid)."""
+    import threading
+    import time
+
     import umcub
+
+    lock = threading.Lock()
+    running = {}
 
     calls = []
     answers = {"identity": {"addr": 5, "uid": "00" * 12, "board_type": 0x46103001, "board_rev": 1, "link": 1,
                             "enc": False, "closed": False, "version": "1.0.0"},
-               "flash": "verify", "devices": [], "adapters": []}
+               "flash": "verify", "devices": [], "adapters": [], "delay": 0.0, "most_at_once": {},
+               "fail_nodes": set()}
 
     def connect(spec, node=None, uid=None, admin_key=None, device_key=None, timeout=3.0, tap=None):
         calls.append(("connect", spec, node, uid, admin_key, device_key))
         if isinstance(answers.get("connect"), Exception):
             raise answers["connect"]
-        return FakeDevice(answers["identity"])
+        return FakeDevice(answers["identity"], spec, node)
 
     def flash(dev, img, protocol, slot, test, permanent, reset, progress, cancel):
         calls.append(("flash", img.version, protocol, slot, test, permanent, reset))
-        for done in (img.size // 2, img.size):
-            if cancel.is_set():
-                raise umcub.Cancelled(code="cancelled.upload")
-            progress(done, img.size)
+        with lock:
+            running[dev.spec] = running.get(dev.spec, 0) + 1
+            answers["most_at_once"][dev.spec] = max(answers["most_at_once"].get(dev.spec, 0), running[dev.spec])
+        try:
+            for done in (img.size // 2, img.size):
+                if cancel.is_set():
+                    raise umcub.Cancelled(code="cancelled.upload")
+                time.sleep(answers["delay"] / 2)
+                progress(done, img.size)
+        finally:
+            with lock:
+                running[dev.spec] -= 1
+        if dev.node in answers["fail_nodes"]:
+            raise umcub.UmcubError(code="flash.invalid")
         if isinstance(answers["flash"], Exception):
             raise answers["flash"]
         return answers["flash"]
