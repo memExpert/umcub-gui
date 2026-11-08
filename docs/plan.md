@@ -55,7 +55,9 @@ First version:
   `UMCUB_CFG_BOARD_TYPE`; the hardware revision does not matter) to a controller name, shown in the discovery list, the
   device panel, the image check and the history; unknown ids stay as hex. Loaded from a file, several files merge,
   later also from a server
-- upload with progress and cancel, reset; SMP and lite chosen automatically
+- upload with progress and cancel; SMP or lite chosen by the user (the bootloader build decides, the app does not
+  probe); after the upload the device checks the image without sending it back (verify, else hash; "not checked"
+  when it cannot); reset afterwards as a checkbox
 - discovery of link nodes; upload to several devices, in parallel where the adapters / bus allow it
 - slots: state, verify, hash, confirm / test boot; readback for the service role
 - exchange log, link bus sniffer, text console (developer role)
@@ -101,7 +103,7 @@ umcub host library (umcub repository, tools/host/umcub)
   transports  registry: scheme -> class, plugins by entry points / folder                   new
   bus hub     one reader per shared port / CAN bus, frames routed by node                   new
   device, link, smp, lite                                                                   exist
-  flash       upload with automatic SMP / lite choice                                       new
+  flash       upload with checks; SMP or lite given by the caller                           new
   tap         callback for every frame sent / received (log, sniffer)                       new
 ```
 
@@ -116,7 +118,8 @@ umcub host library (umcub repository, tools/host/umcub)
   code and parameters; the GUI translates by code and shows the text as a fallback.
 - Translations: Qt Linguist `.ts` sources, compiled `.qm` files in a `translations/` folder next to the app, loaded
   by locale or a setting; a new language is one file.
-- Settings: QSettings (adapter defaults, saved connections, key file paths, role). History: SQLite in the user data
+- Settings: QSettings (adapter defaults, saved connections, key file paths, role); the last session's choices
+  (adapter, connection, protocol, image, checkboxes) come back at the next start. History: SQLite in the user data
   directory: start / end time, UID, board type, node, adapter, image name / version / hash, result, error, app
   version, plus the board name it had at that time (names can change later).
 
@@ -129,7 +132,8 @@ In order; each with host tests (and the CLI uses them too):
 2. `umcub.adapters()`: detected adapters with a display name and a ready connection string (pyserial `list_ports`
    with VID / PID, `can.detect_available_configs()`, network interfaces, plugin entries).
 3. Bus hub for shared serial ports and CAN buses: several `Device`s on one connection, frames routed by node.
-4. `flash()`: one upload call that picks SMP or lite (probe order to be designed) with progress and cancel.
+4. `flash()`: one upload call (protocol given by the caller) with progress, cancel, board type check before and a
+   check without readback after.
 5. Frame tap: an optional callback on every frame (direction, kind, bytes, time); `sniff()` becomes a tap user that
    can stop (today it runs until interrupted and prints through `out=print`).
 6. Error codes on `UmcubError`.
