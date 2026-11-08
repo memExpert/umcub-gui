@@ -149,16 +149,18 @@ In order; each with host tests (and the CLI uses them too):
 ## Testing
 
 - Library: host tests in umcub as today, plus tests for the registry, hub, tap and `flash()`.
-- GUI: pytest-qt for the app layer against a fake transport plugin; an end-to-end run against the existing host
-  simulation of umcub (to check what the link e2e test offers, e.g. `serve --pty-link`).
+- GUI: pytest-qt for the app layer and the windows against fakes of the host library calls (`connect`, `flash`,
+  `discover`, `adapters`); later an end-to-end run against the host simulation of umcub (to check what the link e2e
+  test offers, e.g. `serve --pty-link`).
 - Hardware: the umcub bench (H755, Blue Pill A/B on RS485, Black Pill, CAN) on Linux; Windows with real adapters
   (FTDI, CH340, PCAN or gs_usb) before a release.
 
 ## Milestones
 
-1. Library: registry, adapters, error codes, tap, `flash()`, extras, first tag.
-2. GUI skeleton: repository, CI (Linux + Windows), adapter list, connect, upload one device, history.
-3. Bus hub and parallel upload; discovery screen.
+1. Library: registry, adapters, error codes, tap, `flash()`, extras, first tag. Done: umcub v0.2.0.
+2. GUI skeleton: repository, CI (Linux + Windows), adapter list, connect, upload one device, history. Done, with link
+   discovery (a Discover button filling a device list) and the Settings dialog (board names, plugin folder).
+3. Bus hub and parallel upload; a discovery screen for many devices.
 4. Slots, verify, confirm, readback; roles.
 5. Log, sniffer, console; translations; installers; Windows hardware check.
 
