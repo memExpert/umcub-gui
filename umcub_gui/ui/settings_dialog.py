@@ -1,6 +1,7 @@
-"""Settings dialog: board name files (a later file wins) and the plugin folder, with what failed to load."""
+"""Settings dialog: board name files (a later file wins), the plugin folder with what failed to load, and the
+keepalive interval of connected devices."""
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QListWidget, QPushButton, QVBoxLayout)
+                               QListWidget, QPushButton, QSpinBox, QVBoxLayout)
 
 from ..app.extensions import load_extensions
 
@@ -16,6 +17,8 @@ class SettingsDialog(QDialog):
         remove = QPushButton(self.tr("Remove"), clicked=lambda: self.names.takeItem(self.names.currentRow()))
         self.plugins = QLineEdit(settings.plugins_folder())
         browse = QPushButton("...", clicked=self._pick_folder)
+        self.keepalive = QSpinBox(minimum=5, maximum=19, suffix=" s", value=settings.keepalive_s())
+        self.keepalive.setToolTip(self.tr("Under 20 s: after 20 s without traffic the next request logs in again"))
         self.errors = QLabel(wordWrap=True)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.apply)
@@ -34,6 +37,7 @@ class SettingsDialog(QDialog):
         form = QFormLayout(self)
         form.addRow(self.tr("Board names (JSON, a later file wins)"), names)
         form.addRow(self.tr("Plugin folder"), folder)
+        form.addRow(self.tr("Keep connected devices alive every"), self.keepalive)
         form.addRow(self.errors)
         form.addRow(buttons)
 
@@ -50,6 +54,7 @@ class SettingsDialog(QDialog):
         """Save and load; stays open showing what failed."""
         self.settings.set_board_name_files([self.names.item(i).text() for i in range(self.names.count())])
         self.settings.set_plugins_folder(self.plugins.text().strip())
+        self.settings.set_keepalive_s(self.keepalive.value())
         errors = load_extensions(self.settings)
         if errors:
             self.errors.setText("\n".join(errors))

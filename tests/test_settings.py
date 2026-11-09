@@ -32,3 +32,11 @@ def test_names_and_plugins(qsettings):
     assert s.board_name_files() == ["/a/boards.json", "/b/more.json"] and s.plugins_folder() == "/plugins"
     s.set_board_name_files([])
     assert s.board_name_files() == []
+
+
+def test_keepalive_interval(qsettings):
+    s = Settings(qsettings)
+    assert s.keepalive_s() == 15         # under the library's 20 s idle limit: a ping, not a new handshake
+    s.set_keepalive_s(10)
+    qsettings.sync()
+    assert Settings(QSettings(qsettings.fileName(), QSettings.Format.IniFormat)).keepalive_s() == 10

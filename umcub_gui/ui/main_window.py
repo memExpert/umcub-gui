@@ -5,7 +5,7 @@ import time
 from dataclasses import replace
 
 import umcub
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QProgressBar, QPushButton,
@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDia
 
 from .. import __version__
 from ..app.batch import BatchJob, Row
-from ..app.jobs import AdaptersJob, ConnectJob, DiscoverJob, FlashOptions, Target
+from ..app.connections import Connections
+from ..app.jobs import AdaptersJob, DiscoverJob, FlashOptions, KeepaliveJob, OpenJob, Target
 from ..app.settings import Session
 from .settings_dialog import SettingsDialog
 
@@ -30,6 +31,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings, self.history = settings, history
         self.job = None
+        self.connections = Connections()        # what Connect keeps open until Disconnect
+        self.keepalive_timer = QTimer(self, timeout=self.keepalive)
+        self.keepalive_job = None
         self.failed = []                # table rows the last flash run did not finish
         self.identity = None            # of the device the last connect reached
         self.setWindowTitle(self.tr("umcub {0}").format(__version__))
@@ -78,7 +82,7 @@ class MainWindow(QMainWindow):
         self.table.itemChanged.connect(self._item_changed)
         self.add_button = QPushButton(self.tr("Add"), clicked=self.add_row)
         self.remove_button = QPushButton(self.tr("Remove"), clicked=self.remove_rows)
-        self.connect_button = QPushButton(self.tr("Connect"), clicked=self.check_device)
+        self.connect_button = QPushButton(self.tr("Connect"), clicked=self.toggle_connection)
         self.device_info = QLabel()
         self.image_info = QLabel()
 
@@ -319,23 +323,71 @@ class MainWindow(QMainWindow):
                 self.show_result(True, self.tr("{0} device(s)").format(len(devices)))
             else:
                 self.show_result(None, self.tr("No device answered on {0}").format(spec))
-        self._run(DiscoverJob(spec), done)
+        self._run(DiscoverJob(spec, self.connections), done)
 
-    def check_device(self):
-        i = self.table.currentRow()
-        if i < 0:
+    def _target(self, r):
+        return Target(r.spec, r.node, r.uid, self.admin_key.text(), self.device_key.text())
+
+    def toggle_connection(self):
+        if self.connections:
+            self.disconnect()
             return
-        r = self.rows()[i]
+        rows = self.rows()
+        items = [(i, self._target(r), r.protocol) for i, r in enumerate(rows) if r.checked]
+        if not items:
+            self.show_result(None, self.tr("No device checked: tick the rows to connect"))
+            return
 
-        def done(identity):
-            self.identity = identity
-            if identity:
-                self.table.item(i, self.COL_BOARD).setText(umcub.board_label(identity["board_type"]))
-            self._set_status(i, True, self.tr("connected") + (f": {_version(identity)}" if identity else ""))
-            self.device_info.setText(_describe(identity) if identity else self.tr("connected (no link identity)"))
-            self._show_image()
-            self.show_result(True, self.tr("Connected"))
-        self._run(ConnectJob(Target(r.spec, r.node, r.uid, self.admin_key.text(), self.device_key.text())), done)
+        def done(results):
+            for i, identity, error in results:
+                if error:
+                    self._set_status(i, False, error)
+                    continue
+                if identity:
+                    self.table.item(i, self.COL_BOARD).setText(umcub.board_label(identity["board_type"]))
+                self._set_status(i, True, self.tr("connected") + (f": {_version(identity)}" if identity else ""))
+                if i == self.table.currentRow():
+                    self.identity = identity
+                    self.device_info.setText(_describe(identity) if identity else
+                                             self.tr("connected (no link identity)"))
+                    self._show_image()
+            self._connected_changed()
+            n = sum(not e for _, _, e in results)
+            self.show_result(True if n == len(results) else None,
+                             self.tr("{0} of {1} connected").format(n, len(results)))
+        self._run(OpenJob(items, self.connections), done)
+
+    def disconnect(self):
+        rows = self.rows()
+        connected = [i for i, r in enumerate(rows) if self.connections.device(self._target(r))]
+        self.connections.close_all()
+        for i in connected:
+            self._set_status(i, None, self.tr("disconnected"))
+        self._connected_changed()
+
+    def keepalive(self):
+        """Ping the connected devices (timer); the ones that do not answer are dropped."""
+        def done(res):
+            self.keepalive_job = None
+            for t in res.value or []:
+                for i, r in enumerate(self.rows()):
+                    if self._target(r) == t:
+                        self._set_status(i, False, self.tr("connection lost"))
+            self._connected_changed()
+            self.job_finished.emit(res)
+        if self.keepalive_job:
+            return                                  # the last ping round is still running
+        self.keepalive_job = KeepaliveJob(self.connections)     # beside other jobs: it skips a busy port
+        self.keepalive_job.signals.finished.connect(done)
+        self.keepalive_job.start()
+
+    def _connected_changed(self):
+        on = bool(self.connections)
+        self.connect_button.setText(self.tr("Disconnect") if on else self.tr("Connect"))
+        if on and not self.keepalive_timer.isActive():
+            self.keepalive_timer.start(self.settings.keepalive_s() * 1000)
+        elif not on:
+            self.keepalive_timer.stop()
 
     def flash(self):
         checked = [i for i, r in enumerate(self.rows()) if r.checked]
@@ -360,7 +412,7 @@ class MainWindow(QMainWindow):
                 self._set_status(i, False, self.tr("no image"))
         self.failed = [i for i in indexes if i not in run]
         job = BatchJob([s.rows[i] for i in run], s.admin_key, s.device_key,
-                       FlashOptions(slot=s.slot, mark=s.mark, reset=s.reset), self.history)
+                       FlashOptions(slot=s.slot, mark=s.mark, reset=s.reset), self.history, self.connections)
         job.signals.row_progress.connect(lambda k, done, total: _progress(
             self.table.cellWidget(run[k], self.COL_PROGRESS), done, total))
         job.signals.row_finished.connect(lambda k, res: self._row_done(run[k], res))
@@ -429,6 +481,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e):
         self.settings.save_session(self.session())
+        self.connections.close_all()
         super().closeEvent(e)
 
 

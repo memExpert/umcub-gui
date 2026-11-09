@@ -27,9 +27,9 @@ class BatchSignals(QObject):
 
 
 class BatchJob:
-    def __init__(self, rows, admin_key, device_key, options, history):
+    def __init__(self, rows, admin_key, device_key, options, history, connections):
         self.rows, self.admin_key, self.device_key = rows, admin_key, device_key
-        self.options, self.history = options, history
+        self.options, self.history, self.connections = options, history, connections
         self.signals = BatchSignals()
         self.cancel_event = threading.Event()
 
@@ -59,7 +59,7 @@ class BatchJob:
                 self.signals.row_finished.emit(i, results[i])
                 continue
             job = FlashJob(Target(r.spec, r.node, r.uid, self.admin_key, self.device_key), r.image,
-                           replace(self.options, protocol=r.protocol), self.history)
+                           replace(self.options, protocol=r.protocol), self.history, self.connections)
             job.cancel_event = self.cancel_event
             job.signals.progress.connect(lambda done, total, i=i: self.signals.row_progress.emit(i, done, total))
             res = job.execute()

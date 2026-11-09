@@ -117,6 +117,9 @@ umcub host library (umcub repository, tools/host/umcub)
   code and parameters; the GUI translates by code and shows the text as a fallback.
 - Translations: Qt Linguist `.ts` sources, compiled `.qm` files in a `translations/` folder next to the app, loaded
   by locale or a setting; a new language is one file.
+- Connections: Connect keeps the checked devices open until Disconnect (one port per serial adapter, shared by its
+  nodes), a keepalive ping (interval in Settings) keeps SECURE sessions alive and shows lost devices; jobs use the
+  open connections, or open their own when not connected.
 - Settings: QSettings (adapter defaults, saved connections, key file paths, role); the last session's choices
   (adapter, key files, upload options, the device table with protocols and images) come back at the next start, the
   rows unchecked so that nothing is flashed by accident. History: SQLite in the user data

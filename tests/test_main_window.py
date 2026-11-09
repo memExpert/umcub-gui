@@ -81,8 +81,7 @@ def test_discover_nothing_is_a_warning(qtbot, qsettings, tmp_path, fake_umcub):
 
 def test_connect_status(qtbot, qsettings, tmp_path, fake_umcub):
     win = window(qtbot, qsettings, tmp_path)
-    win.set_rows([Row("/dev/ttyUSB1", 5, "00" * 12, "smp", "")])
-    win.table.selectRow(0)
+    win.set_rows([Row("/dev/ttyUSB1", 5, "00" * 12, "smp", "", checked=True)])
     click(qtbot, win, win.connect_button)
     assert win.status(0) == "connected: umcub 1.0.0, addressed"
 
@@ -152,11 +151,12 @@ def test_row_without_image(qtbot, qsettings, tmp_path, fake_umcub):
 def test_connect_current_row(qtbot, qsettings, tmp_path, fake_umcub, signed_image):
     calls, _ = fake_umcub
     win = window(qtbot, qsettings, tmp_path)
-    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image))])
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image), checked=True)])
     win.table.selectRow(0)
     assert "1.2.3" in win.image_info.text() and "0x46103001" in win.image_info.text()
     click(qtbot, win, win.connect_button)
-    assert calls[0][:3] == ("connect", "/dev/ttyUSB1", 5) and "0x46103001" in win.device_info.text()
+    assert [c[:3] for c in calls if c[0] == "connect"] == [("connect", "/dev/ttyUSB1", 5)]
+    assert "0x46103001" in win.device_info.text()
 
 
 def test_adapters_listed(qtbot, qsettings, tmp_path, fake_umcub):
@@ -229,3 +229,67 @@ def test_image_chosen_in_its_row(qtbot, qsettings, tmp_path, monkeypatch):
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: ("/img/new.signed.bin", ""))
     win.image_widget(0).findChildren(QPushButton)[0].click()
     assert [r.image for r in win.rows()] == ["/img/new.signed.bin"]
+
+
+def connected_window(qtbot, qsettings, tmp_path, signed_image):
+    win = window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", str(signed_image), checked=True),
+                  Row("/dev/ttyUSB0", 6, "", "lite", str(signed_image), checked=True),
+                  Row("/dev/ttyUSB0", 7, "", "smp", "")])
+    click(qtbot, win, win.connect_button)
+    return win
+
+
+def test_connect_keeps_the_checked_rows_open(qtbot, qsettings, tmp_path, fake_umcub, signed_image):
+    calls, _ = fake_umcub
+    win = connected_window(qtbot, qsettings, tmp_path, signed_image)
+    assert [c[:3] for c in calls if c[0] in ("open", "connect")] == \
+        [("open", "/dev/ttyUSB0"), ("connect", "/dev/ttyUSB0", 5), ("connect", "/dev/ttyUSB0", 6)]
+    assert win.connect_button.text() == "Disconnect"
+    assert win.status(0).startswith("connected") and win.status(1).startswith("connected") and win.status(2) == ""
+    calls.clear()
+    click(qtbot, win, win.flash_button)                     # over the open connections: no new connect
+    assert not [c for c in calls if c[0] in ("open", "connect", "close")]
+    assert [c[0] for c in calls].count("flash") == 2 and "valid" in win.status(0)
+    calls.clear()
+    win.connect_button.click()                              # Disconnect
+    assert sorted(c[:3] for c in calls) == [("close", "/dev/ttyUSB0", 5), ("close", "/dev/ttyUSB0", 6),
+                                            ("close conn", "/dev/ttyUSB0")]
+    assert win.connect_button.text() == "Connect" and win.status(0) == "disconnected"
+
+
+def test_keepalive_marks_lost_devices(qtbot, qsettings, tmp_path, fake_umcub, signed_image):
+    calls, answers = fake_umcub
+    win = connected_window(qtbot, qsettings, tmp_path, signed_image)
+    answers["lost_nodes"] = {6}
+    with qtbot.waitSignal(win.job_finished, timeout=5000):
+        win.keepalive()
+    assert ("ping", "/dev/ttyUSB0", 5, "smp") in calls and ("ping", "/dev/ttyUSB0", 6, "lite") in calls
+    assert win.status(1) == "connection lost" and win.status(0).startswith("connected")
+    assert win.connect_button.text() == "Disconnect"        # node 5 is still connected
+
+
+def test_keepalive_interval_from_settings(qtbot, qsettings, tmp_path, fake_umcub, signed_image):
+    Settings(qsettings).set_keepalive_s(7)
+    win = connected_window(qtbot, qsettings, tmp_path, signed_image)
+    assert win.keepalive_timer.isActive() and win.keepalive_timer.interval() == 7000
+    win.connect_button.click()
+    assert not win.keepalive_timer.isActive()
+
+
+def test_discover_over_the_open_port(qtbot, qsettings, tmp_path, fake_umcub, signed_image):
+    calls, _ = fake_umcub
+    win = connected_window(qtbot, qsettings, tmp_path, signed_image)
+    win.adapter.setEditText("/dev/ttyUSB0")
+    calls.clear()
+    click(qtbot, win, win.discover_button)
+    assert calls == [("discover", "/dev/ttyUSB0", "shared")]
+
+
+def test_connect_failure_per_row(qtbot, qsettings, tmp_path, fake_umcub, signed_image):
+    _, answers = fake_umcub
+    answers["connect"] = umcub.LinkError(code="link.no_hello")
+    win = window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 9, "", "smp", "", checked=True)])
+    click(qtbot, win, win.connect_button)
+    assert "no answer" in win.status(0).lower() and win.connect_button.text() == "Connect"

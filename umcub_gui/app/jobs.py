@@ -1,6 +1,6 @@
 """Device jobs: each runs the blocking host library calls in its own thread and reports through Qt signals.
 
-A job opens the connection, does its work and closes it again: the port is free between jobs.
+A job uses the connection Connect keeps open (Connections), or opens its own and closes it when done.
 """
 import os
 import threading
@@ -74,10 +74,12 @@ class Job:
     def done(self, res):
         """After run(), in the worker thread (e.g. the history row)."""
 
-    def connect(self, t):
-        # a node address selects the device; the UID only one without an address (the library prefers the UID)
-        return umcub.connect(t.spec, node=t.node, uid=(t.uid or None) if t.node is None else None,
-                             admin_key=t.admin_key or None, device_key=t.device_key or None)
+
+def connect_target(t, conn=None):
+    """umcub.connect() of a target, over `conn` (an open port) or its own connection. A node address selects the
+    device; the UID only one without an address (the library prefers the UID)."""
+    return umcub.connect(conn or t.spec, node=t.node, uid=(t.uid or None) if t.node is None else None,
+                         admin_key=t.admin_key or None, device_key=t.device_key or None)
 
 
 class AdaptersJob(Job):
@@ -86,32 +88,56 @@ class AdaptersJob(Job):
 
 
 class DiscoverJob(Job):
-    def __init__(self, spec):
+    """Over the open port of `spec` when the window is connected to it, else on its own connection."""
+
+    def __init__(self, spec, connections):
         super().__init__()
-        self.spec = spec
+        self.spec, self.connections = spec, connections
 
     def run(self):
-        return umcub.discover(self.spec)
+        port = self.connections.port(self.spec)
+        if not port:
+            return umcub.discover(self.spec)
+        with port[1]:
+            return umcub.discover(port[0])
 
 
-class ConnectJob(Job):
-    """Opens the device, returns its link identity (None for a device without one) and closes it."""
+class OpenJob(Job):
+    """Connect: opens and keeps the devices of `items` [(row, Target, protocol)]; returns [(row, identity or None,
+    error text or "")]: one device that does not answer does not stop the others."""
 
-    def __init__(self, target):
+    def __init__(self, items, connections):
         super().__init__()
-        self.target = target
+        self.items, self.connections = items, connections
 
     def run(self):
-        with self.connect(self.target) as dev:
-            return dev.identity
+        out = []
+        for row, t, protocol in self.items:
+            try:
+                out.append((row, self.connections.open(t, protocol).identity, ""))
+            except umcub.UmcubError as e:
+                out.append((row, None, str(e)))
+        return out
+
+
+class KeepaliveJob(Job):
+    """Pings the open devices; returns the targets that no longer answer (closed)."""
+
+    def __init__(self, connections):
+        super().__init__()
+        self.connections = connections
+
+    def run(self):
+        return self.connections.ping_all()
 
 
 class FlashJob(Job):
     """umcub.flash() on one device; writes a history row."""
 
-    def __init__(self, target, image_path, options, history):
+    def __init__(self, target, image_path, options, history, connections):
         super().__init__()
         self.target, self.image_path, self.options, self.history = target, image_path, options, history
+        self.connections = connections
         self.img = self.identity = None
         self.cancel_event = threading.Event()
 
@@ -121,12 +147,19 @@ class FlashJob(Job):
     def run(self):
         self.started = time.time()
         self.img = umcub.Image.load(self.image_path)
+        opened = self.connections.device(self.target)
+        if opened:                          # Connect kept it open: use it, leave it open
+            with opened[1]:
+                return self._flash(opened[0])
+        with connect_target(self.target) as dev:
+            return self._flash(dev)
+
+    def _flash(self, dev):
         o = self.options
-        with self.connect(self.target) as dev:
-            self.identity = dev.identity
-            return umcub.flash(dev, self.img, o.protocol, slot=None if o.slot == "primary" else o.slot,
-                               test=o.mark == "test", permanent=o.mark == "permanent", reset=o.reset,
-                               progress=self.signals.progress.emit, cancel=self.cancel_event)
+        self.identity = dev.identity
+        return umcub.flash(dev, self.img, o.protocol, slot=None if o.slot == "primary" else o.slot,
+                           test=o.mark == "test", permanent=o.mark == "permanent", reset=o.reset,
+                           progress=self.signals.progress.emit, cancel=self.cancel_event)
 
     def done(self, res):
         if self.img is None:

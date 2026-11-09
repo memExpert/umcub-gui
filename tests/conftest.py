@@ -1,4 +1,5 @@
 import pytest
+import umcub
 from PySide6.QtCore import QSettings
 
 
@@ -8,26 +9,43 @@ def qsettings(tmp_path):
     return QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
 
 
+class FakeConn:
+    """umcub.open_connection(): a port the program keeps open."""
+
+    def __init__(self, spec, calls):
+        self.spec, self.calls = spec, calls
+
+    def close(self):
+        self.calls.append(("close conn", self.spec))
+
+
 class FakeDevice:
-    def __init__(self, identity, spec, node):
-        self.identity, self.spec, self.node = identity, spec, node
+    def __init__(self, identity, spec, node, calls, answers):
+        self.identity, self.spec, self.node, self.calls, self.answers = identity, spec, node, calls, answers
+
+    def ping(self, protocol):
+        self.calls.append(("ping", self.spec, self.node, protocol))
+        if self.node in self.answers["lost_nodes"]:
+            raise umcub.NoAnswer(code="smp.no_answer")
+
+    def close(self):
+        self.calls.append(("close", self.spec, self.node))
 
     def __enter__(self):
         return self
 
     def __exit__(self, *exc):
-        pass
+        self.close()
 
 
 @pytest.fixture
 def fake_umcub(monkeypatch):
     """The host library calls the app makes, recorded; tests set the answers. answers["delay"] makes each upload
     take that long; answers["most_at_once"] counts the uploads that ran together per device string;
-    answers["fail_nodes"]: nodes whose upload fails (flash.invalid)."""
+    answers["fail_nodes"]: nodes whose upload fails (flash.invalid); answers["lost_nodes"]: nodes that no longer
+    answer a ping."""
     import threading
     import time
-
-    import umcub
 
     lock = threading.Lock()
     running = {}
@@ -36,13 +54,19 @@ def fake_umcub(monkeypatch):
     answers = {"identity": {"addr": 5, "uid": "00" * 12, "board_type": 0x46103001, "board_rev": 1, "link": 1,
                             "enc": False, "closed": False, "version": "1.0.0"},
                "flash": "verify", "devices": [], "adapters": [], "delay": 0.0, "most_at_once": {},
-               "fail_nodes": set()}
+               "fail_nodes": set(), "lost_nodes": set()}
+
+    def open_connection(spec, node=0, tap=None):
+        calls.append(("open", spec))
+        return FakeConn(spec, calls)
 
     def connect(spec, node=None, uid=None, admin_key=None, device_key=None, timeout=3.0, tap=None):
-        calls.append(("connect", spec, node, uid, admin_key, device_key))
+        shared = isinstance(spec, FakeConn)         # a port the program keeps open
+        spec = spec.spec if shared else spec
+        calls.append(("connect", spec, node, uid, admin_key, device_key) + (("shared",) if shared else ()))
         if isinstance(answers.get("connect"), Exception):
             raise answers["connect"]
-        return FakeDevice(answers["identity"], spec, node)
+        return FakeDevice(answers["identity"], spec, node, calls, answers)
 
     def flash(dev, img, protocol, slot, test, permanent, reset, progress, cancel):
         calls.append(("flash", img.version, protocol, slot, test, permanent, reset))
@@ -65,13 +89,15 @@ def fake_umcub(monkeypatch):
         return answers["flash"]
 
     def discover(spec, **kw):
-        calls.append(("discover", spec))
+        calls.append(("discover", spec.spec if isinstance(spec, FakeConn) else spec)
+                     + (("shared",) if isinstance(spec, FakeConn) else ()))
         return answers["devices"]
 
     def adapters(**kw):
         calls.append(("adapters",))
         return answers["adapters"]
 
+    monkeypatch.setattr(umcub, "open_connection", open_connection)
     monkeypatch.setattr(umcub, "connect", connect)
     monkeypatch.setattr(umcub, "flash", flash)
     monkeypatch.setattr(umcub, "discover", discover)

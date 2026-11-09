@@ -26,3 +26,13 @@ def test_error_keeps_it_open(qtbot, qsettings, tmp_path):
     d.names.addItem(str(tmp_path / "bad.json"))
     d.apply()
     assert d.result() != d.DialogCode.Accepted and "bad.json" in d.errors.text()
+
+
+def test_keepalive_saved(qtbot, qsettings):
+    s = Settings(qsettings)
+    d = SettingsDialog(s)
+    qtbot.addWidget(d)
+    assert d.keepalive.maximum() < umcub.device.SESSION_IDLE    # a longer interval re-authenticates every ping
+    d.keepalive.setValue(10)
+    d.apply()
+    assert s.keepalive_s() == 10

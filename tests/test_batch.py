@@ -1,6 +1,7 @@
 """Several devices in one run: the rows of one serial port take turns, CAN / UDP rows and other ports run in
 parallel; a failed device does not stop the others; cancel stops what has not finished."""
 from umcub_gui.app.batch import BatchJob, Row
+from umcub_gui.app.connections import Connections
 from umcub_gui.app.history import History
 from umcub_gui.app.jobs import FlashOptions
 
@@ -20,7 +21,7 @@ def test_serial_takes_turns_can_in_parallel(qtbot, fake_umcub, signed_image, tmp
     answers["delay"] = 0.3
     rs = rows(signed_image, ("/dev/ttyUSB1", 5), ("/dev/ttyUSB1", 6), ("can:virtual:x", 1), ("can:virtual:x", 2),
               ("/dev/ttyUSB0", 7))
-    job = BatchJob(rs, "", "", FlashOptions(), History(tmp_path / "h.sqlite"))
+    job = BatchJob(rs, "", "", FlashOptions(), History(tmp_path / "h.sqlite"), Connections())
     done = []
     job.signals.row_finished.connect(lambda i, res: done.append((i, res.ok)))
     results = run(qtbot, job)
@@ -35,7 +36,7 @@ def test_failure_does_not_stop_the_others(qtbot, fake_umcub, signed_image, tmp_p
     answers["fail_nodes"] = {6}
     history = History(tmp_path / "h.sqlite")
     results = run(qtbot, BatchJob(rows(signed_image, ("/dev/ttyUSB1", 5), ("/dev/ttyUSB1", 6), ("/dev/ttyUSB1", 7)),
-                                  "", "", FlashOptions(), history))
+                                  "", "", FlashOptions(), history, Connections()))
     assert [r.ok for r in results] == [True, False, True] and results[1].error_code == "flash.invalid"
     assert sorted(r.result for r in history.records()) == ["error", "ok", "ok"]
 
@@ -44,7 +45,7 @@ def test_row_progress_and_keys(qtbot, fake_umcub, signed_image, tmp_path):
     calls, _ = fake_umcub
     job = BatchJob([Row(spec="/dev/ttyUSB1", node=None, uid="ab" * 12, protocol="lite", image=str(signed_image))],
                    "/k/a.pem", "/k/d.pem", FlashOptions(slot="secondary", mark="test", reset=True),
-                   History(tmp_path / "h.sqlite"))
+                   History(tmp_path / "h.sqlite"), Connections())
     progress = []
     job.signals.row_progress.connect(lambda i, d, t: progress.append((i, d, t)))
     assert run(qtbot, job)[0].ok
@@ -57,7 +58,7 @@ def test_cancel(qtbot, fake_umcub, signed_image, tmp_path):
     calls, answers = fake_umcub
     answers["delay"] = 0.4
     job = BatchJob(rows(signed_image, ("/dev/ttyUSB1", 5), ("/dev/ttyUSB1", 6)), "", "", FlashOptions(),
-                   History(tmp_path / "h.sqlite"))
+                   History(tmp_path / "h.sqlite"), Connections())
     job.signals.row_progress.connect(lambda i, d, t: job.cancel())      # during the first upload
     results = run(qtbot, job)
     assert results[1].cancelled and not results[1].ok

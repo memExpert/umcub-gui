@@ -47,6 +47,14 @@ class Settings:
     def set_board_name_files(self, files):
         self.q.setValue("board_names", "\n".join(files))
 
+    def keepalive_s(self):
+        """Seconds between the pings that keep connected devices (and SECURE sessions) alive; under the library's
+        20 s idle limit, after which its next request authenticates again."""
+        return int(self.q.value("keepalive_s", 15))
+
+    def set_keepalive_s(self, seconds):
+        self.q.setValue("keepalive_s", seconds)
+
     def plugins_folder(self):
         return self.q.value("plugins_folder", "")
 
