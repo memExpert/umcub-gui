@@ -17,7 +17,7 @@ class Row:
     uid: str
     protocol: str               # "smp" | "lite"
     image: str
-    checked: bool = True
+    checked: bool = False       # the user ticks what to flash
 
 
 class BatchSignals(QObject):

@@ -75,8 +75,9 @@ class Job:
         """After run(), in the worker thread (e.g. the history row)."""
 
     def connect(self, t):
-        return umcub.connect(t.spec, node=t.node, uid=t.uid or None, admin_key=t.admin_key or None,
-                             device_key=t.device_key or None)
+        # a node address selects the device; the UID only one without an address (the library prefers the UID)
+        return umcub.connect(t.spec, node=t.node, uid=(t.uid or None) if t.node is None else None,
+                             admin_key=t.admin_key or None, device_key=t.device_key or None)
 
 
 class AdaptersJob(Job):

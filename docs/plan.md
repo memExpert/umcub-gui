@@ -118,7 +118,8 @@ umcub host library (umcub repository, tools/host/umcub)
 - Translations: Qt Linguist `.ts` sources, compiled `.qm` files in a `translations/` folder next to the app, loaded
   by locale or a setting; a new language is one file.
 - Settings: QSettings (adapter defaults, saved connections, key file paths, role); the last session's choices
-  (adapter, connection, protocol, image, checkboxes) come back at the next start. History: SQLite in the user data
+  (adapter, key files, upload options, the device table with protocols and images) come back at the next start, the
+  rows unchecked so that nothing is flashed by accident. History: SQLite in the user data
   directory: start / end time, UID, board type, node, adapter, image name / version / hash, result, error, app
   version, plus the board name it had at that time (names can change later).
 
@@ -142,8 +143,8 @@ In order; each with host tests (and the CLI uses them too):
 9. Board name catalog: `load_board_names(path)` -> {board_type: name} and a lookup that falls back to hex, so
    the CLI shows the same names (`umcub discover --names <file>`). JSON (standard library), one name per board
    type, no revision; kept by the user next to their images, e.g. `{"0x00010002": "Pump controller"}`.
-10. CAN discovery: `discover()` on CAN asks nodes 0..7 (the default IDs) an SMP echo, else a lite frame of no known
-   kind.
+10. CAN discovery: `discover()` on CAN asks nodes 0..7 (the default IDs) a lite frame of no known kind, else an SMP
+   echo, with the channel kept open for all probes.
 
 ## Testing
 
@@ -160,7 +161,7 @@ In order; each with host tests (and the CLI uses them too):
 2. GUI skeleton: repository, CI (Linux + Windows), adapter list, connect, upload one device, history. Done, with link
    discovery (a Discover button filling a device list) and the Settings dialog (board names, plugin folder).
 3. Several devices: the device table (each row its own image), serial rows in turn and CAN / UDP in parallel,
-   failed rows retried; CAN discovery. Done: umcub v0.3.0.
+   failed rows retried; CAN discovery. Done: umcub v0.3.1.
 4. Slots, verify, confirm, readback; roles.
 5. Log, sniffer, console; translations; installers; Windows hardware check.
 

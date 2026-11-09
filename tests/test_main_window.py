@@ -2,8 +2,10 @@
 discover fills the table, Flash runs the checked rows (serial rows in turn, CAN / UDP in parallel), failed rows can
 be retried; the last session comes back at start."""
 import shutil
+from dataclasses import replace
 
 import umcub
+from PySide6.QtWidgets import QFileDialog, QHeaderView, QLabel, QPushButton
 
 from umcub_gui.app.batch import Row
 from umcub_gui.app.history import History
@@ -29,14 +31,14 @@ def test_title(qtbot, qsettings, tmp_path):
 
 
 def test_last_session_restored(qtbot, qsettings, tmp_path):
-    rows = [Row("/dev/ttyUSB1", 6, "", "lite", "/img/a.signed.bin"),
+    rows = [Row("/dev/ttyUSB1", 6, "", "lite", "/img/a.signed.bin", checked=True),
             Row("/dev/ttyUSB1", None, "ab" * 12, "smp", "/img/b.signed.bin", checked=False)]
     Settings(qsettings).save_session(Session(adapter="/dev/ttyUSB1", admin_key="/k/a.pem", slot="secondary",
                                              mark="test", reset=True, rows=rows))
     win = window(qtbot, qsettings, tmp_path)
     assert win.adapter.currentText() == "/dev/ttyUSB1" and win.admin_key.text() == "/k/a.pem"
     assert win.slot.currentData() == "secondary" and win.mark.currentData() == "test" and win.reset.isChecked()
-    assert win.rows() == rows
+    assert win.rows() == [replace(r, checked=False) for r in rows]     # nothing is flashed by accident
 
 
 def test_discover_link_fills_the_table(qtbot, qsettings, tmp_path, fake_umcub):
@@ -47,11 +49,42 @@ def test_discover_link_fills_the_table(qtbot, qsettings, tmp_path, fake_umcub):
     win.adapter.setEditText("/dev/ttyUSB1")
     click(qtbot, win, win.discover_button)
     assert [(r.spec, r.node, r.uid, r.protocol) for r in win.rows()] == \
-        [("/dev/ttyUSB1", 5, "", "smp"), ("/dev/ttyUSB1", None, "ab" * 12, "smp")]     # unassigned: by UID
+        [("/dev/ttyUSB1", 5, "00" * 12, "smp"), ("/dev/ttyUSB1", None, "ab" * 12, "smp")]  # UID shown for all
+    assert not any(r.checked for r in win.rows())          # the user picks what to flash
     assert "0x46103001" in win.table.item(0, win.COL_BOARD).text()
-    win.set_image([0], "/img/x.signed.bin")
+    assert win.status(0) == "found: umcub 1.0.0, addressed" and win.status(1) == "found: umcub 1.0.0, addressed"
+    win.set_image(0, "/img/x.signed.bin")
     click(qtbot, win, win.discover_button)                  # again: the known rows stay, with their images
     assert len(win.rows()) == 2 and win.rows()[0].image == "/img/x.signed.bin"
+
+
+def test_discover_matches_known_rows(qtbot, qsettings, tmp_path, fake_umcub):
+    """A saved row is matched by its node (its UID filled in), a row of the adapter that did not answer says so."""
+    _, answers = fake_umcub
+    answers["devices"] = [dict(addr=5, uid="00" * 12, board_type=0x46103001, **LINK)]
+    win = window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", "/img/a.signed.bin"), Row("/dev/ttyUSB1", 9, "", "smp", ""),
+                  Row("/dev/ttyUSB0", 2, "", "smp", "")])
+    win.adapter.setEditText("/dev/ttyUSB1")
+    click(qtbot, win, win.discover_button)
+    assert [(r.node, r.uid, r.image) for r in win.rows()] == \
+        [(5, "00" * 12, "/img/a.signed.bin"), (9, "", ""), (2, "", "")]
+    assert win.status(0).startswith("found") and win.status(1) == "not found" and win.status(2) == ""
+
+
+def test_discover_nothing_is_a_warning(qtbot, qsettings, tmp_path, fake_umcub):
+    win = window(qtbot, qsettings, tmp_path)
+    win.adapter.setEditText("/dev/ttyUSB1")
+    click(qtbot, win, win.discover_button)
+    assert win.result.text() == "No device answered on /dev/ttyUSB1" and "#1a7f37" not in win.result.styleSheet()
+
+
+def test_connect_status(qtbot, qsettings, tmp_path, fake_umcub):
+    win = window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB1", 5, "00" * 12, "smp", "")])
+    win.table.selectRow(0)
+    click(qtbot, win, win.connect_button)
+    assert win.status(0) == "connected: umcub 1.0.0, addressed"
 
 
 def test_discover_can(qtbot, qsettings, tmp_path, fake_umcub):
@@ -78,8 +111,8 @@ def test_flash_checked_rows(qtbot, qsettings, tmp_path, fake_umcub, signed_image
     other = tmp_path / "other.signed.bin"
     shutil.copy(signed_image, other)
     win = window(qtbot, qsettings, tmp_path)
-    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image)),
-                  Row("/dev/ttyUSB1", 6, "", "smp", str(other)),
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image), checked=True),
+                  Row("/dev/ttyUSB1", 6, "", "smp", str(other), checked=True),
                   Row("/dev/ttyUSB1", 7, "", "smp", str(signed_image), checked=False)])
     win.reset.setChecked(True)
     click(qtbot, win, win.flash_button)
@@ -96,10 +129,11 @@ def test_failed_rows_retried(qtbot, qsettings, tmp_path, fake_umcub, signed_imag
     calls, answers = fake_umcub
     answers["fail_nodes"] = {6}
     win = window(qtbot, qsettings, tmp_path)
-    win.set_rows([Row("/dev/ttyUSB1", n, "", "smp", str(signed_image)) for n in (5, 6, 7)])
+    win.set_rows([Row("/dev/ttyUSB1", n, "", "smp", str(signed_image), checked=True) for n in (5, 6, 7)])
     click(qtbot, win, win.flash_button)
     assert "invalid" in win.status(1) and "1 failed" in win.result.text() and win.retry_button.isEnabled()
     assert "node 6: the device reports the uploaded image invalid" in win.log.toPlainText()    # each device's error
+    assert win.table.item(1, win.COL_STATUS).toolTip() == win.status(1)     # the whole text when the cell cuts it
     answers["fail_nodes"] = set()
     calls.clear()
     click(qtbot, win, win.retry_button)
@@ -110,7 +144,7 @@ def test_failed_rows_retried(qtbot, qsettings, tmp_path, fake_umcub, signed_imag
 def test_row_without_image(qtbot, qsettings, tmp_path, fake_umcub):
     calls, _ = fake_umcub
     win = window(qtbot, qsettings, tmp_path)
-    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", "")])
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", "", checked=True)])
     click(qtbot, win, win.flash_button)
     assert not [c for c in calls if c[0] == "flash"] and win.status(0)
 
@@ -140,10 +174,10 @@ def test_table_locked_while_flashing(qtbot, qsettings, tmp_path, fake_umcub, sig
     _, answers = fake_umcub
     answers["delay"] = 0.4
     win = window(qtbot, qsettings, tmp_path)
-    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image))])
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image), checked=True)])
     with qtbot.waitSignal(win.job_finished, timeout=10000):
         win.flash_button.click()
-        busy = [b.isEnabled() for b in (win.add_button, win.remove_button, win.image_button)]
+        busy = [b.isEnabled() for b in (win.add_button, win.remove_button, win.image_widget(0))]
         editable = win.table.editTriggers() != win.table.EditTrigger.NoEditTriggers
     assert busy == [False, False, False] and not editable
     assert win.add_button.isEnabled() and win.table.editTriggers() != win.table.EditTrigger.NoEditTriggers
@@ -153,9 +187,45 @@ def test_removing_rows_forgets_failed(qtbot, qsettings, tmp_path, fake_umcub, si
     _, answers = fake_umcub
     answers["fail_nodes"] = {5}
     win = window(qtbot, qsettings, tmp_path)
-    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image))])
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image), checked=True)])
     click(qtbot, win, win.flash_button)
     assert win.retry_button.isEnabled()
     win.table.selectRow(0)
     win.remove_button.click()
     assert not win.retry_button.isEnabled()
+
+
+def test_nothing_checked(qtbot, qsettings, tmp_path, fake_umcub):
+    calls, _ = fake_umcub
+    win = window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", "")])
+    win.flash_button.click()
+    assert not calls and "no device checked" in win.result.text().lower() and win.flash_button.isEnabled()
+
+
+def test_image_column_resizable(qtbot, qsettings, tmp_path):
+    win = window(qtbot, qsettings, tmp_path)
+    header = win.table.horizontalHeader()
+    assert header.sectionResizeMode(win.COL_IMAGE) == QHeaderView.ResizeMode.Interactive    # not Stretch
+    assert header.stretchLastSection() and header.sectionSize(win.COL_IMAGE) == 220
+
+
+def test_image_chosen_in_its_row(qtbot, qsettings, tmp_path, monkeypatch):
+    """No image: a Choose... button fills the cell; with one: its file name and a small ... button at the right."""
+    win = window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", ""), Row("/dev/ttyUSB1", 6, "", "smp", "")])
+    cell = win.image_widget(1)
+    buttons = cell.findChildren(QPushButton)
+    assert len(buttons) == 1 and "Choose" in buttons[0].text() and not cell.findChildren(QLabel)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: ("/img/app.signed.bin", ""))
+    buttons[0].click()
+    assert [r.image for r in win.rows()] == ["", "/img/app.signed.bin"]     # only that row
+    cell = win.image_widget(1)
+    assert cell.findChildren(QLabel)[0].text() == "app.signed.bin"
+    assert win.table.item(1, win.COL_IMAGE).text() == ""        # nothing drawn under the cell's widget
+    assert [b.text() for b in cell.findChildren(QPushButton)] == ["..."]
+    win.table.selectRow(0)
+    win.remove_button.click()                                               # rows move: the button follows its row
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: ("/img/new.signed.bin", ""))
+    win.image_widget(0).findChildren(QPushButton)[0].click()
+    assert [r.image for r in win.rows()] == ["/img/new.signed.bin"]

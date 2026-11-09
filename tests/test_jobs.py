@@ -108,3 +108,10 @@ def test_adapters(qtbot, fake_umcub):
     answers["adapters"] = [umcub.Adapter("/dev/ttyUSB0", "serial", "ttyUSB0", "FT232R", 0x403, 0x6001, "A1", "1-2")]
     res = run(qtbot, AdaptersJob())
     assert res.ok and res.value == answers["adapters"]
+
+
+def test_node_wins_over_uid(qtbot, fake_umcub):
+    calls, _ = fake_umcub
+    run(qtbot, ConnectJob(Target("/dev/ttyUSB1", 5, "00" * 12, "", "")))
+    run(qtbot, ConnectJob(Target("/dev/ttyUSB1", None, "ab" * 12, "", "")))
+    assert [c[2:4] for c in calls] == [(5, None), (None, "ab" * 12)]      # the UID selects only a node without address

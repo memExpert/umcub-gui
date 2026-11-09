@@ -16,7 +16,7 @@ def test_session_round_trip(qsettings):
     s = Settings(qsettings)
     want = Session(adapter="/dev/ttyUSB1", admin_key="/k/admin.pem", device_key="/k/dev.pem", slot="secondary",
                    mark="test", reset=True,
-                   rows=[Row("/dev/ttyUSB1", 5, "", "smp", "/img/a.signed.bin"),
+                   rows=[Row("/dev/ttyUSB1", 5, "", "smp", "/img/a.signed.bin", checked=True),
                          Row("/dev/ttyUSB1", None, "ab" * 12, "lite", "/img/b.signed.bin", checked=False),
                          Row("can:socketcan:can0", 3, "", "smp", "")])
     s.save_session(want)

@@ -1,6 +1,8 @@
 """Main window: the device table (one row per device, each with its image) under the shared adapter, key files and
 upload options, and the history tab. Device work runs as app jobs."""
+import os
 import time
+from dataclasses import replace
 
 import umcub
 from PySide6.QtCore import Qt, Signal
@@ -15,8 +17,9 @@ from ..app.jobs import AdaptersJob, ConnectJob, DiscoverJob, FlashOptions, Targe
 from ..app.settings import Session
 from .settings_dialog import SettingsDialog
 
-OK_STYLE, ERROR_STYLE = "color: #1a7f37; font-weight: bold", "color: #cf222e; font-weight: bold"
-OK_COLOR, ERROR_COLOR = QColor("#1a7f37"), QColor("#cf222e")
+# ok True / False / None (a warning): green, red, orange
+COLORS = {True: "#1a7f37", False: "#cf222e", None: "#bc4c00"}
+IMAGE_ROLE = Qt.ItemDataRole.UserRole
 
 
 class MainWindow(QMainWindow):
@@ -67,14 +70,14 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.edit_triggers = self.table.editTriggers()
         header = self.table.horizontalHeader()
-        for col in (self.COL_CHECK, self.COL_NODE, self.COL_BOARD, self.COL_STATUS):
+        for col in (self.COL_CHECK, self.COL_NODE, self.COL_UID, self.COL_BOARD):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(self.COL_IMAGE, QHeaderView.ResizeMode.Stretch)
+        header.setStretchLastSection(True)      # Status fills the rest; the other columns are resized by hand
+        self.table.setColumnWidth(self.COL_IMAGE, 220)
         self.table.currentCellChanged.connect(lambda *_: self._show_image())
-        self.table.itemChanged.connect(lambda item: item.column() == self.COL_IMAGE and self._show_image())
+        self.table.itemChanged.connect(self._item_changed)
         self.add_button = QPushButton(self.tr("Add"), clicked=self.add_row)
         self.remove_button = QPushButton(self.tr("Remove"), clicked=self.remove_rows)
-        self.image_button = QPushButton(self.tr("Image..."), clicked=self.pick_image)
         self.connect_button = QPushButton(self.tr("Connect"), clicked=self.check_device)
         self.device_info = QLabel()
         self.image_info = QLabel()
@@ -92,7 +95,7 @@ class MainWindow(QMainWindow):
         form.addRow(self.tr("Upload"), _row(self.slot, self.mark, self.reset))
         box = QVBoxLayout()
         box.addLayout(form)
-        box.addWidget(_row(self.add_button, self.remove_button, self.image_button, self.connect_button))
+        box.addWidget(_row(self.add_button, self.remove_button, self.connect_button))
         box.addWidget(self.table, 3)
         box.addWidget(self.device_info)
         box.addWidget(self.image_info)
@@ -127,11 +130,13 @@ class MainWindow(QMainWindow):
         check.setCheckState(Qt.CheckState.Checked if r.checked else Qt.CheckState.Unchecked)
         self.table.setItem(i, self.COL_CHECK, check)
         for col, text in ((self.COL_ADAPTER, r.spec), (self.COL_NODE, "" if r.node is None else str(r.node)),
-                          (self.COL_UID, r.uid), (self.COL_IMAGE, r.image)):
+                          (self.COL_UID, r.uid)):
             self.table.setItem(i, col, QTableWidgetItem(text))
-        for col, text in ((self.COL_BOARD, board), (self.COL_STATUS, "")):
+        for col, text in ((self.COL_BOARD, board), (self.COL_IMAGE, ""), (self.COL_STATUS, "")):
             item = QTableWidgetItem(text)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if col == self.COL_IMAGE:       # the path is data: no text drawn under the cell's widget (_image_cell)
+                item.setData(IMAGE_ROLE, r.image)
             self.table.setItem(i, col, item)
         protocol = QComboBox()
         protocol.addItem("SMP", "smp")
@@ -139,6 +144,38 @@ class MainWindow(QMainWindow):
         protocol.setCurrentIndex(max(0, protocol.findData(r.protocol)))
         self.table.setCellWidget(i, self.COL_PROTOCOL, protocol)
         self.table.setCellWidget(i, self.COL_PROGRESS, QProgressBar())
+        self._image_cell(i)
+
+    def _image_cell(self, i):
+        """No image: a Choose... button over the cell; an image: its file name and a small ... button at the right."""
+        path = self._image(i)
+        cell = QWidget()
+        box = QHBoxLayout(cell)
+        box.setContentsMargins(2, 0, 2, 0)
+        if path:
+            name = QLabel(os.path.basename(path))
+            name.setToolTip(path)
+            box.addWidget(name, 1)
+            button = QPushButton("...")
+            button.setFixedWidth(28)
+        else:
+            button = QPushButton(self.tr("Choose..."))
+        button.clicked.connect(lambda: self._pick_image(cell))
+        box.addWidget(button)
+        self.table.setCellWidget(i, self.COL_IMAGE, cell)
+
+    def image_widget(self, i):
+        return self.table.cellWidget(i, self.COL_IMAGE)
+
+    def _pick_image(self, cell):
+        path, _ = QFileDialog.getOpenFileName(self, filter="*.bin")
+        if path:                # the cell's row now: rows above it may have gone
+            self.set_image(next(i for i in range(self.table.rowCount()) if self.image_widget(i) is cell), path)
+
+    def _item_changed(self, item):
+        if item.column() == self.COL_IMAGE:
+            self._image_cell(item.row())
+            self._show_image()
 
     def rows(self):
         out = []
@@ -147,7 +184,7 @@ class MainWindow(QMainWindow):
             out.append(Row(self.table.item(i, self.COL_ADAPTER).text().strip(), int(node) if node.isdigit() else None,
                            self.table.item(i, self.COL_UID).text().strip(),
                            self.table.cellWidget(i, self.COL_PROTOCOL).currentData(),
-                           self.table.item(i, self.COL_IMAGE).text().strip(),
+                           self._image(i),
                            self.table.item(i, self.COL_CHECK).checkState() == Qt.CheckState.Checked))
         return out
 
@@ -157,9 +194,11 @@ class MainWindow(QMainWindow):
         for r in rows:
             self._append(r)
 
-    def set_image(self, indexes, path):
-        for i in indexes:
-            self.table.item(i, self.COL_IMAGE).setText(path)
+    def set_image(self, i, path):
+        self.table.item(i, self.COL_IMAGE).setData(IMAGE_ROLE, path)
+
+    def _image(self, i):
+        return self.table.item(i, self.COL_IMAGE).data(IMAGE_ROLE) or ""
 
     def status(self, i):
         return self.table.item(i, self.COL_STATUS).text()
@@ -167,7 +206,8 @@ class MainWindow(QMainWindow):
     def _set_status(self, i, ok, text):
         item = self.table.item(i, self.COL_STATUS)
         item.setText(text)
-        item.setForeground(OK_COLOR if ok else ERROR_COLOR)
+        item.setToolTip(text)                   # the whole text when the cell cuts it
+        item.setForeground(QColor(COLORS[ok]))
 
     def _selected(self):
         return sorted({ix.row() for ix in self.table.selectedIndexes()})
@@ -185,11 +225,6 @@ class MainWindow(QMainWindow):
         self.failed = []
         self.retry_button.setEnabled(False)
 
-    def pick_image(self):
-        path, _ = QFileDialog.getOpenFileName(self, filter="*.bin")
-        if path:
-            self.set_image(self._selected() or [self.table.currentRow()], path)
-
     # --- session -----------------------------------------------------------------------------------------------
 
     def _restore(self, s):
@@ -200,7 +235,7 @@ class MainWindow(QMainWindow):
         self.mark.setCurrentIndex(max(0, self.mark.findData(s.mark)))
         self.mark.setEnabled(s.slot == "secondary")
         self.reset.setChecked(s.reset)
-        self.set_rows(s.rows)
+        self.set_rows([replace(r, checked=False) for r in s.rows])      # nothing is flashed by accident
 
     def session(self):
         return Session(adapter=self.adapter_spec(), admin_key=self.admin_key.text(), device_key=self.device_key.text(),
@@ -216,11 +251,12 @@ class MainWindow(QMainWindow):
     def _set_busy(self, busy, cancellable=False):
         """While a job runs the table keeps its rows: a run refers to them by index."""
         for b in (self.flash_button, self.discover_button, self.connect_button, self.refresh_button,
-                  self.add_button, self.remove_button, self.image_button):
+                  self.add_button, self.remove_button):
             b.setEnabled(not busy)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers if busy else self.edit_triggers)
         for i in range(self.table.rowCount()):
-            self.table.cellWidget(i, self.COL_PROTOCOL).setEnabled(not busy)
+            for col in (self.COL_PROTOCOL, self.COL_IMAGE):
+                self.table.cellWidget(i, col).setEnabled(not busy)
         self.retry_button.setEnabled(not busy and bool(self.failed))
         self.cancel_button.setEnabled(busy and cancellable)
 
@@ -240,7 +276,7 @@ class MainWindow(QMainWindow):
         self.job_finished.emit(res)
 
     def show_result(self, ok, text):
-        self.result.setStyleSheet(OK_STYLE if ok else ERROR_STYLE)
+        self.result.setStyleSheet(f"color: {COLORS[ok]}; font-weight: bold")
         self.result.setText(text)
         self.log.appendPlainText(f"{time.strftime('%H:%M:%S')} {text}")
 
@@ -260,16 +296,29 @@ class MainWindow(QMainWindow):
         spec = self.adapter_spec()
 
         def done(devices):
-            known = {(r.spec, r.node, r.uid): i for i, r in enumerate(self.rows())}
-            for d in devices:
-                node, uid = (d["addr"] or None, "" if d["addr"] else d["uid"]) if "uid" in d else (d["addr"], "")
-                board = umcub.board_label(d["board_type"]) if "board_type" in d else ""
-                i = known.get((spec, node, uid))
+            rows = self.rows()
+            # a known row: the same node on this adapter, or the same UID for a device without an address
+            known = {(r.spec, r.node if r.node is not None else r.uid): i for i, r in enumerate(rows)}
+            found = set()
+            for d in devices:            # link identities (serial / UDP) or {"addr", "protocol"} (CAN)
+                node, uid = (d["addr"] or None if "uid" in d else d["addr"]), d.get("uid", "")
+                i = known.get((spec, node if node is not None else uid))
                 if i is None:
-                    self._append(Row(spec, node, uid, d.get("protocol", "smp"), ""), board)
-                else:
-                    self.table.item(i, self.COL_BOARD).setText(board)
-            self.show_result(True, self.tr("{0} device(s)").format(len(devices)))
+                    i = self.table.rowCount()
+                    self._append(Row(spec, node, uid, d.get("protocol", "smp"), ""))
+                elif uid:
+                    self.table.item(i, self.COL_UID).setText(uid)
+                if "board_type" in d:
+                    self.table.item(i, self.COL_BOARD).setText(umcub.board_label(d["board_type"]))
+                self._set_status(i, True, self.tr("found") + (f": {_version(d)}" if "version" in d else ""))
+                found.add(i)
+            for i, r in enumerate(rows):
+                if r.spec == spec and i not in found:
+                    self._set_status(i, None, self.tr("not found"))
+            if devices:
+                self.show_result(True, self.tr("{0} device(s)").format(len(devices)))
+            else:
+                self.show_result(None, self.tr("No device answered on {0}").format(spec))
         self._run(DiscoverJob(spec), done)
 
     def check_device(self):
@@ -282,13 +331,18 @@ class MainWindow(QMainWindow):
             self.identity = identity
             if identity:
                 self.table.item(i, self.COL_BOARD).setText(umcub.board_label(identity["board_type"]))
+            self._set_status(i, True, self.tr("connected") + (f": {_version(identity)}" if identity else ""))
             self.device_info.setText(_describe(identity) if identity else self.tr("connected (no link identity)"))
             self._show_image()
             self.show_result(True, self.tr("Connected"))
         self._run(ConnectJob(Target(r.spec, r.node, r.uid, self.admin_key.text(), self.device_key.text())), done)
 
     def flash(self):
-        self._flash([i for i, r in enumerate(self.rows()) if r.checked])
+        checked = [i for i, r in enumerate(self.rows()) if r.checked]
+        if checked:
+            self._flash(checked)
+        else:
+            self.show_result(False, self.tr("No device checked: tick the rows to flash"))
 
     def retry(self):
         self._flash(self.failed)
@@ -343,7 +397,7 @@ class MainWindow(QMainWindow):
 
     def _show_image(self):
         i = self.table.currentRow()
-        path = self.table.item(i, self.COL_IMAGE).text().strip() if i >= 0 else ""
+        path = self._image(i) if i >= 0 else ""
         try:
             img = umcub.Image.load(path)
         except umcub.UmcubError as e:
@@ -383,8 +437,13 @@ def _progress(bar, done, total):
     bar.setValue(done)
 
 
+def _version(i):
+    """"umcub 1.0.0, addressed" of a link identity."""
+    return f"umcub {i['version']}, {umcub.LINK_NAMES.get(i['link'], '?')}"
+
+
 def _describe(i):
-    return (f"node {i['addr']}   uid {i['uid']}   {umcub.board_label(i['board_type'])}   umcub {i['version']}"
+    return (f"node {i['addr']}   uid {i['uid']}   {umcub.board_label(i['board_type'])}   {_version(i)}"
             + ("   SECURE" if i.get("enc") else ""))
 
 
