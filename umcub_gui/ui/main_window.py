@@ -7,15 +7,16 @@ from dataclasses import replace
 import umcub
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout,
-                               QHeaderView, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QProgressBar, QPushButton,
-                               QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox,
+                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QProgressBar,
+                               QPushButton, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import __version__
 from ..app.batch import BatchJob, Row
 from ..app.connections import Connections
 from ..app.jobs import AdaptersJob, DiscoverJob, FlashOptions, KeepaliveJob, OpenJob, Target
 from ..app.settings import Session
+from ..app.slots import ReadJob, SlotActionJob, SlotsJob
 from .settings_dialog import SettingsDialog
 
 # ok True / False / None (a warning): green, red, orange
@@ -37,16 +38,17 @@ class MainWindow(QMainWindow):
         self.failed = []                # table rows the last flash run did not finish
         self.identity = None            # of the device the last connect reached
         self.setWindowTitle(self.tr("umcub {0}").format(__version__))
-        tabs = QTabWidget()
-        tabs.addTab(self._flash_tab(), self.tr("Flash"))
-        tabs.addTab(self._history_tab(), self.tr("History"))
-        self.setCentralWidget(tabs)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._flash_tab(), self.tr("Flash"))
+        self.tabs.addTab(self._history_tab(), self.tr("History"))
+        self.setCentralWidget(self.tabs)
         settings_action = QAction(self.tr("Settings..."), self)
         settings_action.triggered.connect(self.open_settings)
         self.menuBar().addAction(settings_action)
         self.resize(1000, 700)
         self._restore(settings.session())
         self.reload_history()
+        self.apply_role()
 
     # --- widgets -----------------------------------------------------------------------------------------------
 
@@ -78,7 +80,7 @@ class MainWindow(QMainWindow):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         header.setStretchLastSection(True)      # Status fills the rest; the other columns are resized by hand
         self.table.setColumnWidth(self.COL_IMAGE, 220)
-        self.table.currentCellChanged.connect(lambda *_: self._show_image())
+        self.table.currentCellChanged.connect(self._current_changed)
         self.table.itemChanged.connect(self._item_changed)
         self.add_button = QPushButton(self.tr("Add"), clicked=self.add_row)
         self.remove_button = QPushButton(self.tr("Remove"), clicked=self.remove_rows)
@@ -101,6 +103,7 @@ class MainWindow(QMainWindow):
         box.addLayout(form)
         box.addWidget(_row(self.add_button, self.remove_button, self.connect_button))
         box.addWidget(self.table, 3)
+        box.addWidget(self._slot_panel())
         box.addWidget(self.device_info)
         box.addWidget(self.image_info)
         box.addWidget(_row(self.flash_button, self.retry_button, self.cancel_button))
@@ -109,6 +112,36 @@ class MainWindow(QMainWindow):
         w = QWidget()
         w.setLayout(box)
         return w
+
+    def _slot_panel(self):
+        """The image slots of the selected row's device and the actions on a slot (service role). The actions go to
+        the checked rows, or to the selected one when none is checked; Read to the selected one."""
+        self.slot_table = QTableWidget(0, 5)
+        self.slot_table.setHorizontalHeaderLabels([self.tr(h) for h in ("Image", "Slot", "Version", "Hash", "Flags")])
+        self.slot_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.slot_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        header = self.slot_table.horizontalHeader()
+        for col in range(4):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        header.setStretchLastSection(True)
+        self.slot_table.setMaximumHeight(110)
+        self.slots_info = QLabel(self.tr("Slots need SMP: not available with lite"))
+        self.slots_refresh_button = QPushButton(self.tr("Refresh slots"), clicked=self.refresh_slots)
+        self.verify_button = QPushButton(self.tr("Verify"), clicked=lambda: self.slot_action("verify"))
+        self.hash_button = QPushButton(self.tr("Hash vs image"), clicked=lambda: self.slot_action("hash"))
+        self.test_button = QPushButton(self.tr("Test boot"), clicked=lambda: self.slot_action("test"))
+        self.permanent_button = QPushButton(self.tr("Permanent"), clicked=lambda: self.slot_action("permanent"))
+        self.read_button = QPushButton(self.tr("Read to file..."), clicked=self.read_slot)
+        self.test_button.setToolTip(self.tr("Marks the image in the secondary slot; the application confirms itself "
+                                            "(umcub_confirm())"))
+        self.slot_buttons = (self.slots_refresh_button, self.verify_button, self.hash_button, self.test_button,
+                             self.permanent_button, self.read_button)
+        self.slot_panel = QGroupBox(self.tr("Slots"))
+        box = QVBoxLayout(self.slot_panel)
+        box.addWidget(self.slots_info)
+        box.addWidget(self.slot_table)
+        box.addWidget(_row(*self.slot_buttons))
+        return self.slot_panel
 
     def _history_tab(self):
         self.history_table = QTableWidget(0, 10)
@@ -263,10 +296,11 @@ class MainWindow(QMainWindow):
                 self.table.cellWidget(i, col).setEnabled(not busy)
         self.retry_button.setEnabled(not busy and bool(self.failed))
         self.cancel_button.setEnabled(busy and cancellable)
+        self._slot_row_changed(busy)
 
-    def _run(self, job, on_done):
+    def _run(self, job, on_done, cancellable=False):
         self.job = job
-        self._set_busy(True)
+        self._set_busy(True, cancellable)
         job.signals.finished.connect(lambda res: self._finished(res, on_done))
         job.start()
 
@@ -447,6 +481,87 @@ class MainWindow(QMainWindow):
         self.reload_history()
         self.job_finished.emit(results)
 
+    # --- slots (service role) ------------------------------------------------------------------------------------
+
+    def apply_role(self):
+        role = self.settings.role()
+        self.discover_button.setVisible(role != "customer")
+        self.tabs.setTabVisible(1, role != "customer")             # history
+        self.slot_panel.setVisible(role in ("service", "developer"))
+
+    def _current_changed(self, row, col, previous_row, previous_col):
+        self._show_image()
+        if row != previous_row:
+            self.slot_table.setRowCount(0)      # the slots shown were another device's
+        self._slot_row_changed()
+
+    def _slot_row_changed(self, busy=False):
+        i = self.table.currentRow()
+        protocol = self.table.cellWidget(i, self.COL_PROTOCOL) if i >= 0 else None    # None while a row is filled
+        lite = protocol is not None and protocol.currentData() == "lite"
+        for b in self.slot_buttons:
+            b.setEnabled(not busy and protocol is not None and not lite)
+        self.slots_info.setVisible(lite)
+
+    def _slot(self):
+        """(image, slot) selected in the slot table; the primary slot of image 0 when none is."""
+        k = self.slot_table.currentRow()
+        if k < 0:
+            return 0, 0
+        return int(self.slot_table.item(k, 0).text()), int(self.slot_table.item(k, 1).text())
+
+    def refresh_slots(self):
+        def done(images):
+            self.slot_table.setRowCount(len(images))
+            for k, s in enumerate(images):
+                flags = " ".join(f for f in ("active", "confirmed", "pending", "permanent", "bootable") if s[f])
+                for col, text in enumerate((str(s["image"]), str(s["slot"]), s["version"], s["hash"].hex(), flags)):
+                    self.slot_table.setItem(k, col, QTableWidgetItem(text))
+            self.show_result(True, self.tr("{0} slot(s)").format(len(images)))
+        self._run(SlotsJob(self._target(self.rows()[self.table.currentRow()]), self.connections), done)
+
+    def slot_action(self, action):
+        rows = self.rows()
+        picked = [i for i, r in enumerate(rows) if r.checked] or [self.table.currentRow()]
+        image, slot = self._slot()
+        if action in ("test", "permanent"):
+            slot = 1                        # a mark is for the image in the secondary slot
+
+        names = {"verify": self.tr("Verify"), "hash": self.tr("Hash vs image"), "test": self.tr("Test boot"),
+                 "permanent": self.tr("Permanent")}
+        lite = [i for i in picked if rows[i].protocol == "lite"]
+        for i in lite:
+            self._set_status(i, None, self.tr("no slots with lite"))
+
+        texts = {"valid": self.tr("valid"), "invalid": self.tr("invalid (hash, signature or board type)"),
+                 "matches": self.tr("SHA-256 matches"), "differs": self.tr("SHA-256 differs"),
+                 "no_image": self.tr("no image"),
+                 "encrypted_primary": self.tr("not comparable: decrypted in the primary slot"),
+                 "no_secondary": self.tr("no image in the secondary slot"),
+                 "marked_test": self.tr("marked for a test boot"), "marked_permanent": self.tr("marked permanent")}
+
+        def done(results):
+            for i, ok, code in results:             # a code, or a library error's text
+                self._set_status(i, ok, self.tr("slot {0}/{1}: {2}").format(image, slot, texts.get(code, code)))
+            n = sum(ok is True for _, ok, _ in results)
+            self.show_result(n == len(picked) or None,
+                             self.tr("{0}: {1} of {2} ok").format(names[action], n, len(picked)))
+        items = [(i, self._target(rows[i]), rows[i].image) for i in picked if i not in lite]
+        self._run(SlotActionJob(items, action, image, slot, self.connections), done)
+
+    def read_slot(self):
+        i = self.table.currentRow()
+        image, slot = self._slot()
+        path, _ = QFileDialog.getSaveFileName(self, self.tr("Read slot {0}/{1} to").format(image, slot),
+                                              filter="*.bin")
+        if not path:
+            return
+        job = ReadJob(self._target(self.rows()[i]), image, slot, path, self.connections)
+        job.signals.progress.connect(lambda done, total: _progress(
+            self.table.cellWidget(i, self.COL_PROGRESS), done, total))
+        self._run(job, lambda n: self.show_result(True, self.tr("{0} bytes read to {1}").format(n, path)),
+                  cancellable=True)
+
     def _show_image(self):
         i = self.table.currentRow()
         path = self._image(i) if i >= 0 else ""
@@ -478,6 +593,7 @@ class MainWindow(QMainWindow):
     def open_settings(self):
         if SettingsDialog(self.settings, self).exec():
             self._show_image()
+            self.apply_role()
 
     def closeEvent(self, e):
         self.settings.save_session(self.session())

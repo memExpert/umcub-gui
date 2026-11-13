@@ -54,7 +54,13 @@ def fake_umcub(monkeypatch):
     answers = {"identity": {"addr": 5, "uid": "00" * 12, "board_type": 0x46103001, "board_rev": 1, "link": 1,
                             "enc": False, "closed": False, "version": "1.0.0"},
                "flash": "verify", "devices": [], "adapters": [], "delay": 0.0, "most_at_once": {},
-               "fail_nodes": set(), "lost_nodes": set()}
+               "fail_nodes": set(), "lost_nodes": set(),
+               # SMP slot requests: images() list, verify / hash answers per node, read data
+               "images": [dict(image=0, slot=0, version="1.0.0", hash=b"\x11" * 32, active=True, confirmed=True,
+                               pending=False, permanent=False, bootable=True),
+                          dict(image=0, slot=1, version="1.0.1", hash=b"\x22" * 32, active=False, confirmed=False,
+                               pending=False, permanent=False, bootable=True)],
+               "verify": {}, "hash": {}, "read": b"\xab" * 300}
 
     def open_connection(spec, node=0, tap=None):
         calls.append(("open", spec))
@@ -97,11 +103,54 @@ def fake_umcub(monkeypatch):
         calls.append(("adapters",))
         return answers["adapters"]
 
+    class FakeSmp:
+        """umcub.Smp on a FakeDevice: answers from `answers`, an Exception answer is raised."""
+
+        def __init__(self, dev):
+            self.node = dev.node
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            pass
+
+        def _answer(self, what, default):
+            a = answers[what].get(self.node, default)
+            if isinstance(a, Exception):
+                raise a
+            return a
+
+        def images(self):
+            calls.append(("images", self.node))
+            return answers["images"]
+
+        def verify(self, image, slot):
+            calls.append(("verify", self.node, image, slot))
+            return self._answer("verify", True)
+
+        def hash(self, image, slot, off=0, length=0):
+            calls.append(("hash", self.node, image, slot))
+            return self._answer("hash", (b"\x11" * 32, 300))
+
+        def mark(self, image_hash, permanent=False):
+            calls.append(("mark", self.node, image_hash, permanent))
+
+        def read(self, image, slot, off=0, length=0, progress=None, cancel=None):
+            calls.append(("read", self.node, image, slot))
+            data = answers["read"]
+            for done in range(128, len(data) + 128, 128):
+                if cancel is not None and cancel.is_set():
+                    raise umcub.Cancelled(code="cancelled.read")
+                progress(min(done, len(data)), len(data))
+            return data
+
     monkeypatch.setattr(umcub, "open_connection", open_connection)
     monkeypatch.setattr(umcub, "connect", connect)
     monkeypatch.setattr(umcub, "flash", flash)
     monkeypatch.setattr(umcub, "discover", discover)
     monkeypatch.setattr(umcub, "adapters", adapters)
+    monkeypatch.setattr(umcub, "Smp", FakeSmp)
     return calls, answers
 
 

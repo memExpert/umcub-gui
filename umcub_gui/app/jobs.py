@@ -5,6 +5,7 @@ A job uses the connection Connect keeps open (Connections), or opens its own and
 import os
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import umcub
@@ -82,6 +83,18 @@ def connect_target(t, conn=None):
                          admin_key=t.admin_key or None, device_key=t.device_key or None)
 
 
+@contextmanager
+def device_for(t, connections):
+    """The target's device: the one Connect keeps open (under its port's lock, left open), else its own connection."""
+    opened = connections.device(t)
+    if opened:
+        with opened[1]:
+            yield opened[0]
+    else:
+        with connect_target(t) as dev:
+            yield dev
+
+
 class AdaptersJob(Job):
     def run(self):
         return umcub.adapters()
@@ -131,7 +144,18 @@ class KeepaliveJob(Job):
         return self.connections.ping_all()
 
 
-class FlashJob(Job):
+class CancellableJob(Job):
+    """A job that stops at its next step once cancel() was called (cancel_event goes to the library)."""
+
+    def __init__(self):
+        super().__init__()
+        self.cancel_event = threading.Event()
+
+    def cancel(self):
+        self.cancel_event.set()
+
+
+class FlashJob(CancellableJob):
     """umcub.flash() on one device; writes a history row."""
 
     def __init__(self, target, image_path, options, history, connections):
@@ -139,19 +163,11 @@ class FlashJob(Job):
         self.target, self.image_path, self.options, self.history = target, image_path, options, history
         self.connections = connections
         self.img = self.identity = None
-        self.cancel_event = threading.Event()
-
-    def cancel(self):
-        self.cancel_event.set()
 
     def run(self):
         self.started = time.time()
         self.img = umcub.Image.load(self.image_path)
-        opened = self.connections.device(self.target)
-        if opened:                          # Connect kept it open: use it, leave it open
-            with opened[1]:
-                return self._flash(opened[0])
-        with connect_target(self.target) as dev:
+        with device_for(self.target, self.connections) as dev:
             return self._flash(dev)
 
     def _flash(self, dev):

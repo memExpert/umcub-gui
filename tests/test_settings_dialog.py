@@ -36,3 +36,12 @@ def test_keepalive_saved(qtbot, qsettings):
     d.keepalive.setValue(10)
     d.apply()
     assert s.keepalive_s() == 10
+
+
+def test_role_saved(qtbot, qsettings):
+    s = Settings(qsettings)
+    d = SettingsDialog(s)
+    qtbot.addWidget(d)
+    d.role.setCurrentIndex(d.role.findData("developer"))
+    d.apply()
+    assert s.role() == "developer"

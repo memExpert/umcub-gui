@@ -19,6 +19,9 @@ class Session:
     rows: list = field(default_factory=list)    # [Row]
 
 
+ROLES = ("customer", "operator", "service", "developer")
+
+
 class Settings:
     def __init__(self, qsettings=None):
         self.q = qsettings if qsettings is not None else QSettings()
@@ -46,6 +49,13 @@ class Settings:
 
     def set_board_name_files(self, files):
         self.q.setValue("board_names", "\n".join(files))
+
+    def role(self):
+        """What the window shows (ROLES); not a security boundary - the device and the keys are."""
+        return self.q.value("role", "operator")
+
+    def set_role(self, role):
+        self.q.setValue("role", role)
 
     def keepalive_s(self):
         """Seconds between the pings that keep connected devices (and SECURE sessions) alive; under the library's

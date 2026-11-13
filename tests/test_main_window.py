@@ -293,3 +293,92 @@ def test_connect_failure_per_row(qtbot, qsettings, tmp_path, fake_umcub, signed_
     win.set_rows([Row("/dev/ttyUSB0", 9, "", "smp", "", checked=True)])
     click(qtbot, win, win.connect_button)
     assert "no answer" in win.status(0).lower() and win.connect_button.text() == "Connect"
+
+
+def service_window(qtbot, qsettings, tmp_path):
+    Settings(qsettings).set_role("service")
+    return window(qtbot, qsettings, tmp_path)
+
+
+def test_slot_panel_lists_the_selected_device(qtbot, qsettings, tmp_path, fake_umcub):
+    win = service_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", "")])
+    win.table.selectRow(0)
+    click(qtbot, win, win.slots_refresh_button)
+    assert win.slot_table.rowCount() == 2
+    assert win.slot_table.item(0, 2).text() == "1.0.0" and "active" in win.slot_table.item(0, 4).text()
+    assert win.slot_table.item(1, 3).text().startswith("2222")
+
+
+def test_slot_action_on_checked_rows(qtbot, qsettings, tmp_path, fake_umcub):
+    calls, answers = fake_umcub
+    answers["verify"] = {6: False}
+    win = service_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", "", checked=True),
+                  Row("/dev/ttyUSB0", 6, "", "smp", "", checked=True),
+                  Row("/dev/ttyUSB0", 7, "", "smp", "")])
+    win.table.selectRow(0)
+    click(qtbot, win, win.slots_refresh_button)
+    win.slot_table.selectRow(1)                                     # the secondary slot
+    click(qtbot, win, win.verify_button)
+    assert [c for c in calls if c[0] == "verify"] == [("verify", 5, 0, 1), ("verify", 6, 0, 1)]
+    assert win.status(0) == "slot 0/1: valid" and win.status(1).startswith("slot 0/1: invalid") and win.status(2) == ""
+
+
+def test_slot_action_without_checked_rows_uses_the_selected_one(qtbot, qsettings, tmp_path, fake_umcub):
+    calls, _ = fake_umcub
+    win = service_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", ""), Row("/dev/ttyUSB0", 6, "", "smp", "")])
+    win.table.selectRow(1)
+    click(qtbot, win, win.test_button)
+    assert ("mark", 6, b"\x22" * 32, False) in calls and win.status(1) == "slot 0/1: marked for a test boot"
+
+
+def test_read_slot_to_a_file(qtbot, qsettings, tmp_path, fake_umcub, monkeypatch):
+    _, answers = fake_umcub
+    out = tmp_path / "read.bin"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
+    win = service_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", "")])
+    win.table.selectRow(0)
+    click(qtbot, win, win.read_button)
+    assert out.read_bytes() == answers["read"] and "300 bytes" in win.result.text()
+
+
+def test_lite_row_has_no_slots(qtbot, qsettings, tmp_path, fake_umcub):
+    win = service_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "lite", "")])
+    win.table.selectRow(0)
+    assert not win.slots_refresh_button.isEnabled() and "SMP" in win.slots_info.text()
+
+
+def test_roles_show_what_a_role_needs(qtbot, qsettings, tmp_path):
+    seen = {}
+    for role in ("customer", "operator", "service", "developer"):
+        Settings(qsettings).set_role(role)
+        win = window(qtbot, qsettings, tmp_path)
+        seen[role] = (not win.discover_button.isHidden(), win.tabs.isTabVisible(1), not win.slot_panel.isHidden())
+    assert seen == {"customer": (False, False, False), "operator": (True, True, False),
+                    "service": (True, True, True), "developer": (True, True, True)}
+
+
+def test_slot_table_follows_the_selected_device(qtbot, qsettings, tmp_path, fake_umcub):
+    win = service_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", ""), Row("/dev/ttyUSB0", 6, "", "smp", "")])
+    win.table.selectRow(0)
+    click(qtbot, win, win.slots_refresh_button)
+    assert win.slot_table.rowCount() == 2
+    win.table.selectRow(1)                          # another device: the slots shown were node 5's
+    assert win.slot_table.rowCount() == 0
+
+
+def test_lite_rows_in_a_slot_action_say_so(qtbot, qsettings, tmp_path, fake_umcub):
+    calls, _ = fake_umcub
+    win = service_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", "", checked=True),
+                  Row("/dev/ttyUSB0", 6, "", "lite", "", checked=True)])
+    win.table.selectRow(0)
+    click(qtbot, win, win.verify_button)
+    assert [c[1] for c in calls if c[0] == "verify"] == [5]
+    assert win.status(0) == "slot 0/0: valid" and win.status(1) == "no slots with lite"
+    assert "1 of 2" in win.result.text()

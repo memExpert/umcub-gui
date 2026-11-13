@@ -1,9 +1,10 @@
-"""Settings dialog: board name files (a later file wins), the plugin folder with what failed to load, and the
-keepalive interval of connected devices."""
-from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QListWidget, QPushButton, QSpinBox, QVBoxLayout)
+"""Settings dialog: board name files (a later file wins), the plugin folder with what failed to load, the keepalive
+interval of connected devices and the role (what the window shows)."""
+from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
+                               QLineEdit, QListWidget, QPushButton, QSpinBox, QVBoxLayout)
 
 from ..app.extensions import load_extensions
+from ..app.settings import ROLES
 
 
 class SettingsDialog(QDialog):
@@ -17,6 +18,12 @@ class SettingsDialog(QDialog):
         remove = QPushButton(self.tr("Remove"), clicked=lambda: self.names.takeItem(self.names.currentRow()))
         self.plugins = QLineEdit(settings.plugins_folder())
         browse = QPushButton("...", clicked=self._pick_folder)
+        self.role = QComboBox()
+        for role, text in zip(ROLES, (self.tr("Customer: flash"), self.tr("Operator: + discover, history"),
+                                      self.tr("Service: + slots, verify, readback"),
+                                      self.tr("Developer: as service (log, sniffer, console come next)"))):
+            self.role.addItem(text, role)
+        self.role.setCurrentIndex(max(0, self.role.findData(settings.role())))
         self.keepalive = QSpinBox(minimum=5, maximum=19, suffix=" s", value=settings.keepalive_s())
         self.keepalive.setToolTip(self.tr("Under 20 s: after 20 s without traffic the next request logs in again"))
         self.errors = QLabel(wordWrap=True)
@@ -38,6 +45,7 @@ class SettingsDialog(QDialog):
         form.addRow(self.tr("Board names (JSON, a later file wins)"), names)
         form.addRow(self.tr("Plugin folder"), folder)
         form.addRow(self.tr("Keep connected devices alive every"), self.keepalive)
+        form.addRow(self.tr("Role (what the window shows)"), self.role)
         form.addRow(self.errors)
         form.addRow(buttons)
 
@@ -55,6 +63,7 @@ class SettingsDialog(QDialog):
         self.settings.set_board_name_files([self.names.item(i).text() for i in range(self.names.count())])
         self.settings.set_plugins_folder(self.plugins.text().strip())
         self.settings.set_keepalive_s(self.keepalive.value())
+        self.settings.set_role(self.role.currentData())
         errors = load_extensions(self.settings)
         if errors:
             self.errors.setText("\n".join(errors))

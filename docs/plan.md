@@ -5,7 +5,7 @@ Draft of 2026-11-05.
 ## Goal and scope
 
 A desktop **flasher** for devices running the umcub bootloader: pick an adapter, find the devices, upload signed
-images, check and confirm them, keep a history. It works with every adapter class the bootloader can be reached
+images, check and mark them, keep a history. It works with every adapter class the bootloader can be reached
 through (USB-UART, USB-RS485, USB-CAN, USB-Ethernet / any network, the board's own USB CDC) and lets users add a
 driver for an adapter the app does not know.
 
@@ -42,7 +42,7 @@ How the service role is unlocked (password, key, server account) is **open** (se
 |---|---|
 | End customer | one device, upload, result |
 | Operator | discovery, upload to many devices, result list, history |
-| Service engineer | + slots, verify, hash, confirm / test boot, readback, device info, history export |
+| Service engineer | + slots, verify, hash, test boot / permanent marks, readback, device info, history export |
 | Developer | + exchange log, bus sniffer, text console, raw SMP |
 
 ## Features
@@ -59,7 +59,7 @@ First version:
   probe); after the upload the device checks the image without sending it back (verify, else hash; "not checked"
   when it cannot); reset afterwards as a checkbox
 - discovery of link nodes; upload to several devices, in parallel where the adapters / bus allow it
-- slots: state, verify, hash, confirm / test boot; readback for the service role
+- slots: state, verify, hash, test boot / permanent marks; readback for the service role
 - exchange log, link bus sniffer, text console (developer role)
 - history per device UID with export
 
@@ -165,7 +165,10 @@ In order; each with host tests (and the CLI uses them too):
    discovery (a Discover button filling a device list) and the Settings dialog (board names, plugin folder).
 3. Several devices: the device table (each row its own image), serial rows in turn and CAN / UDP in parallel,
    failed rows retried; CAN discovery. Done: umcub v0.3.1.
-4. Slots, verify, confirm, readback; roles.
+4. Slots, verify, hash, test boot / permanent marks, readback; roles. Done: a slot panel for the selected device
+   (actions on the checked rows, or the selected one when none is checked), roles as a setting without unlock (how
+   the service role is unlocked is still open). No Confirm button: in recovery nothing runs, the application
+   confirms itself; lite devices have no slots.
 5. Log, sniffer, console; translations; installers; Windows hardware check.
 
 ## Open questions

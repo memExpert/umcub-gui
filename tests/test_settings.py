@@ -40,3 +40,10 @@ def test_keepalive_interval(qsettings):
     s.set_keepalive_s(10)
     qsettings.sync()
     assert Settings(QSettings(qsettings.fileName(), QSettings.Format.IniFormat)).keepalive_s() == 10
+
+
+def test_role(qsettings):
+    s = Settings(qsettings)
+    assert s.role() == "operator"
+    s.set_role("service")
+    assert s.role() == "service"
