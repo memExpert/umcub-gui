@@ -9,6 +9,13 @@ def qsettings(tmp_path):
     return QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
 
 
+def fake_name(spec):
+    """Connection.name as the library gives it: a serial port, "ip:port" for UDP, "interface:channel" for CAN."""
+    if spec.startswith("can:"):
+        return spec[4:]
+    return f"{spec}:1337" if spec[0].isdigit() else spec
+
+
 class FakeConn:
     """umcub.open_connection(): a port the program keeps open."""
 
@@ -22,6 +29,10 @@ class FakeConn:
 class FakeDevice:
     def __init__(self, identity, spec, node, calls, answers):
         self.identity, self.spec, self.node, self.calls, self.answers = identity, spec, node, calls, answers
+
+    def text(self, cmd):
+        self.calls.append(("text", self.spec, self.node, cmd))
+        return self.answers["text"]
 
     def ping(self, protocol):
         self.calls.append(("ping", self.spec, self.node, protocol))
@@ -60,16 +71,29 @@ def fake_umcub(monkeypatch):
                                pending=False, permanent=False, bootable=True),
                           dict(image=0, slot=1, version="1.0.1", hash=b"\x22" * 32, active=False, confirmed=False,
                                pending=False, permanent=False, bootable=True)],
-               "verify": {}, "hash": {}, "read": b"\xab" * 300}
+               "verify": {}, "hash": {}, "read": b"\xab" * 300, "text": "umcub 0.1.0 board 0x46103001\r\n"}
+
+    def tapped(tap, spec):
+        """A connection with a tap shows one frame in it, as the library's tap would: a HELLO to node 5, on CAN an
+        SMP echo (no node in it: the CAN IDs select the node)."""
+        if tap and spec.startswith("can:"):
+            tap(umcub.TapEvent(1.0, "tx", umcub.KIND_SMP, bytes([2, 0, 0, 0, 0, 0, 1, 0]), fake_name(spec)))
+        elif tap:
+            from umcub import link
+            tap(umcub.TapEvent(1.0, "tx", umcub.KIND_LINK, link.make_frame(link.T_HELLO, 0, 5, 1, b""),
+                               fake_name(spec)))
 
     def open_connection(spec, node=0, tap=None):
         calls.append(("open", spec))
+        tapped(tap, spec)
         return FakeConn(spec, calls)
 
     def connect(spec, node=None, uid=None, admin_key=None, device_key=None, timeout=3.0, tap=None):
         shared = isinstance(spec, FakeConn)         # a port the program keeps open
         spec = spec.spec if shared else spec
         calls.append(("connect", spec, node, uid, admin_key, device_key) + (("shared",) if shared else ()))
+        if not shared:
+            tapped(tap, spec)
         if isinstance(answers.get("connect"), Exception):
             raise answers["connect"]
         return FakeDevice(answers["identity"], spec, node, calls, answers)
@@ -94,7 +118,9 @@ def fake_umcub(monkeypatch):
             raise answers["flash"]
         return answers["flash"]
 
-    def discover(spec, **kw):
+    def discover(spec, tap=None, **kw):
+        if not isinstance(spec, FakeConn):
+            tapped(tap, spec)
         calls.append(("discover", spec.spec if isinstance(spec, FakeConn) else spec)
                      + (("shared",) if isinstance(spec, FakeConn) else ()))
         return answers["devices"]

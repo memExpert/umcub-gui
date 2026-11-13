@@ -76,11 +76,11 @@ class Job:
         """After run(), in the worker thread (e.g. the history row)."""
 
 
-def connect_target(t, conn=None):
-    """umcub.connect() of a target, over `conn` (an open port) or its own connection. A node address selects the
-    device; the UID only one without an address (the library prefers the UID)."""
+def connect_target(t, conn=None, tap=None):
+    """umcub.connect() of a target, over `conn` (an open port) or its own connection (with `tap`, the exchange log).
+    A node address selects the device; the UID only one without an address (the library prefers the UID)."""
     return umcub.connect(conn or t.spec, node=t.node, uid=(t.uid or None) if t.node is None else None,
-                         admin_key=t.admin_key or None, device_key=t.device_key or None)
+                         admin_key=t.admin_key or None, device_key=t.device_key or None, tap=tap)
 
 
 @contextmanager
@@ -91,7 +91,7 @@ def device_for(t, connections):
         with opened[1]:
             yield opened[0]
     else:
-        with connect_target(t) as dev:
+        with connect_target(t, tap=connections.tap_for(t.spec, t.node)) as dev:
             yield dev
 
 
@@ -110,9 +110,21 @@ class DiscoverJob(Job):
     def run(self):
         port = self.connections.port(self.spec)
         if not port:
-            return umcub.discover(self.spec)
+            return umcub.discover(self.spec, tap=self.connections.tap_for(self.spec))
         with port[1]:
             return umcub.discover(port[0])
+
+
+class TextJob(Job):
+    """A text command to one device (developer console); its answer."""
+
+    def __init__(self, target, command, connections):
+        super().__init__()
+        self.target, self.command, self.connections = target, command, connections
+
+    def run(self):
+        with device_for(self.target, self.connections) as dev:
+            return dev.text(self.command)
 
 
 class OpenJob(Job):

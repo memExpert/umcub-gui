@@ -16,10 +16,23 @@ def _key(t):
 
 
 class Connections:
-    def __init__(self):
+    def __init__(self, tap=None):
+        self.tap = tap          # the exchange log, on every connection opened here and by the jobs (tap_for)
+        self.names = {}         # device string -> Connection.name its events carry (the log's device filter)
         self._ports = {}        # spec -> (Connection, lock): serial ports shared by their nodes
         self._devices = {}      # _key(target) -> (Device, lock, protocol, target)
         self._guard = threading.Lock()
+
+    def tap_for(self, spec, node=None):
+        """The tap of a connection to `spec` (opened for `node`: on CAN its IDs, its SMP packets do not say it): notes
+        the connection's name, then the exchange log; None without one."""
+        if self.tap is None:
+            return None
+
+        def tap(ev):
+            self.names[spec] = ev.connection
+            self.tap(ev, node)
+        return tap
 
     def __bool__(self):
         return bool(self._devices)
@@ -30,9 +43,10 @@ class Connections:
         with self._guard:
             port = self._ports.get(t.spec) if shared else None
             if shared and port is None:
-                port = self._ports[t.spec] = (umcub.open_connection(t.spec), threading.Lock())
+                port = self._ports[t.spec] = (umcub.open_connection(t.spec, tap=self.tap_for(t.spec)),
+                                                threading.Lock())
         try:
-            dev = connect_target(t, port[0] if port else None)
+            dev = connect_target(t, port[0]) if port else connect_target(t, tap=self.tap_for(t.spec, t.node))
         except BaseException:
             self._drop_port(t.spec)
             raise

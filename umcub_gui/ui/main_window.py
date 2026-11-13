@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import umcub
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor
+from PySide6.QtGui import QAction, QColor, QFontDatabase
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QProgressBar,
                                QPushButton, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDia
 from .. import __version__
 from ..app.batch import BatchJob, Row
 from ..app.connections import Connections
-from ..app.jobs import AdaptersJob, DiscoverJob, FlashOptions, KeepaliveJob, OpenJob, Target
+from ..app.exchange import ExchangeLog, line
+from ..app.jobs import AdaptersJob, DiscoverJob, FlashOptions, KeepaliveJob, OpenJob, Target, TextJob
 from ..app.settings import Session
 from ..app.slots import ReadJob, SlotActionJob, SlotsJob
 from .settings_dialog import SettingsDialog
@@ -32,7 +33,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings, self.history = settings, history
         self.job = None
-        self.connections = Connections()        # what Connect keeps open until Disconnect
+        self.exchange = ExchangeLog()           # every payload of every connection (developer tab)
+        self.exchange.batch.connect(self._show_events)
+        QTimer(self, timeout=self.exchange.flush).start(200)
+        self.connections = Connections(self.exchange)   # what Connect keeps open until Disconnect
         self.keepalive_timer = QTimer(self, timeout=self.keepalive)
         self.keepalive_job = None
         self.failed = []                # table rows the last flash run did not finish
@@ -41,6 +45,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._flash_tab(), self.tr("Flash"))
         self.tabs.addTab(self._history_tab(), self.tr("History"))
+        self.tabs.addTab(self._developer_tab(), self.tr("Developer"))
         self.setCentralWidget(self.tabs)
         settings_action = QAction(self.tr("Settings..."), self)
         settings_action.triggered.connect(self.open_settings)
@@ -142,6 +147,75 @@ class MainWindow(QMainWindow):
         box.addWidget(self.slot_table)
         box.addWidget(_row(*self.slot_buttons))
         return self.slot_panel
+
+    def _developer_tab(self):
+        """The exchange log (pause, clear, save, the selected device only) and a text console to the selected
+        device."""
+        self.exchange_view = QPlainTextEdit(readOnly=True)
+        self.exchange_view.setMaximumBlockCount(5000)
+        self.exchange_view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.pause_button = QPushButton(self.tr("Pause"), checkable=True)
+        self.clear_log_button = QPushButton(self.tr("Clear"), clicked=self._clear_log)
+        self.save_log_button = QPushButton(self.tr("Save..."), clicked=self._save_log)
+        self.filter_check = QCheckBox(self.tr("Selected device only"))
+        self.filter_check.toggled.connect(self._render_log)
+        self.console_view = QPlainTextEdit(readOnly=True)
+        mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)        # columns of the log line up
+        self.exchange_view.setFont(mono)
+        self.console_view.setFont(mono)
+        self.console_input = QLineEdit(placeholderText=self.tr("text command to the selected device, e.g. i"))
+        self.send_button = QPushButton(self.tr("Send"), clicked=self.send_text)
+        self.console_input.returnPressed.connect(self.send_text)
+        w = QWidget()
+        box = QVBoxLayout(w)
+        box.addWidget(_row(self.pause_button, self.clear_log_button, self.save_log_button, self.filter_check))
+        box.addWidget(self.exchange_view, 3)
+        box.addWidget(QLabel(self.tr("Console")))
+        box.addWidget(self.console_view, 1)
+        box.addWidget(_row(self.console_input, self.send_button))
+        return w
+
+    def _lines(self, events):
+        """The log lines of the events shown: all, or with the filter only the selected row's device."""
+        i = self.table.currentRow()
+        r = self.rows()[i] if self.filter_check.isChecked() and i >= 0 else None
+        name = self.connections.names.get(r.spec) if r else None      # None: nothing went to that device yet
+        out = []
+        for ev, node in events:
+            d = umcub.describe(ev)
+            if r is None or (ev.connection == name and (d.node if d.node is not None else node) in (None, r.node)):
+                out.append(line(ev, d))
+        return out
+
+    def _show_events(self, events):
+        if self.pause_button.isChecked():
+            return                              # kept in the log; Pause off does not bring them back (Save does)
+        lines = self._lines(events)
+        if lines:
+            self.exchange_view.appendPlainText("\n".join(lines))
+
+    def _render_log(self):
+        self.exchange_view.setPlainText("\n".join(self._lines(self.exchange.events())))
+
+    def _clear_log(self):
+        self.exchange.clear()
+        self.exchange_view.clear()
+
+    def _save_log(self):
+        path, _ = QFileDialog.getSaveFileName(self, self.tr("Save the exchange log"), filter="*.txt")
+        if path:
+            with open(path, "w") as f:
+                f.writelines(line(ev, umcub.describe(ev), full=True) + "\n" for ev, _ in self.exchange.events())
+
+    def send_text(self):
+        i = self.table.currentRow()
+        cmd = self.console_input.text().strip()
+        if i < 0 or not cmd:
+            return
+        self.console_input.clear()
+        self.console_view.appendPlainText(f"> {cmd}")
+        self._run(TextJob(self._target(self.rows()[i]), cmd, self.connections),
+                  lambda answer: self.console_view.appendPlainText(answer.rstrip() or self.tr("(no answer)")))
 
     def _history_tab(self):
         self.history_table = QTableWidget(0, 10)
@@ -288,7 +362,7 @@ class MainWindow(QMainWindow):
     def _set_busy(self, busy, cancellable=False):
         """While a job runs the table keeps its rows: a run refers to them by index."""
         for b in (self.flash_button, self.discover_button, self.connect_button, self.refresh_button,
-                  self.add_button, self.remove_button):
+                  self.add_button, self.remove_button, self.send_button):
             b.setEnabled(not busy)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers if busy else self.edit_triggers)
         for i in range(self.table.rowCount()):
@@ -487,12 +561,15 @@ class MainWindow(QMainWindow):
         role = self.settings.role()
         self.discover_button.setVisible(role != "customer")
         self.tabs.setTabVisible(1, role != "customer")             # history
+        self.tabs.setTabVisible(2, role == "developer")
         self.slot_panel.setVisible(role in ("service", "developer"))
 
     def _current_changed(self, row, col, previous_row, previous_col):
         self._show_image()
         if row != previous_row:
             self.slot_table.setRowCount(0)      # the slots shown were another device's
+            if self.filter_check.isChecked():
+                self._render_log()              # the log of the selected device only
         self._slot_row_changed()
 
     def _slot_row_changed(self, busy=False):

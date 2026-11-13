@@ -21,7 +21,7 @@ class SettingsDialog(QDialog):
         self.role = QComboBox()
         for role, text in zip(ROLES, (self.tr("Customer: flash"), self.tr("Operator: + discover, history"),
                                       self.tr("Service: + slots, verify, readback"),
-                                      self.tr("Developer: as service (log, sniffer, console come next)"))):
+                                      self.tr("Developer: + exchange log, text console"))):
             self.role.addItem(text, role)
         self.role.setCurrentIndex(max(0, self.role.findData(settings.role())))
         self.keepalive = QSpinBox(minimum=5, maximum=19, suffix=" s", value=settings.keepalive_s())

@@ -382,3 +382,91 @@ def test_lite_rows_in_a_slot_action_say_so(qtbot, qsettings, tmp_path, fake_umcu
     assert [c[1] for c in calls if c[0] == "verify"] == [5]
     assert win.status(0) == "slot 0/0: valid" and win.status(1) == "no slots with lite"
     assert "1 of 2" in win.result.text()
+
+
+def developer_window(qtbot, qsettings, tmp_path):
+    Settings(qsettings).set_role("developer")
+    return window(qtbot, qsettings, tmp_path)
+
+
+def hello(node, conn):
+    from umcub import link
+    return umcub.TapEvent(1.0, "tx", umcub.KIND_LINK, link.make_frame(link.T_HELLO, 0, node, 1, b""), conn)
+
+
+def test_developer_tab_only_for_developers(qtbot, qsettings, tmp_path):
+    assert not service_window(qtbot, qsettings, tmp_path).tabs.isTabVisible(2)
+    assert developer_window(qtbot, qsettings, tmp_path).tabs.isTabVisible(2)
+
+
+def test_exchange_log_shows_the_traffic(qtbot, qsettings, tmp_path, fake_umcub):
+    win = developer_window(qtbot, qsettings, tmp_path)
+    win.adapter.setEditText("/dev/ttyUSB0")
+    click(qtbot, win, win.discover_button)                  # the fake library taps one HELLO
+    win.exchange.flush()
+    assert "HELLO" in win.exchange_view.toPlainText() and "/dev/ttyUSB0" in win.exchange_view.toPlainText()
+
+
+def test_exchange_log_pause_clear_save(qtbot, qsettings, tmp_path, monkeypatch):
+    win = developer_window(qtbot, qsettings, tmp_path)
+    for ev in (hello(5, "/dev/ttyUSB0"), hello(6, "/dev/ttyUSB1"), hello(7, "/dev/ttyUSB0")):
+        win.exchange(ev)
+    win.exchange.flush()
+    assert win.exchange_view.toPlainText().count("HELLO") == 3
+    win.pause_button.setChecked(True)
+    win.exchange(hello(5, "/dev/ttyUSB0"))
+    win.exchange.flush()
+    assert win.exchange_view.toPlainText().count("HELLO") == 3
+    win.pause_button.setChecked(False)
+    out = tmp_path / "log.txt"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
+    win.save_log_button.click()
+    saved = out.read_text().splitlines()
+    assert len(saved) == 4 and saved[0].endswith(hello(5, "/dev/ttyUSB0").payload.hex())   # all, the bytes whole
+    win.clear_log_button.click()
+    assert win.exchange_view.toPlainText() == "" and win.exchange.events() == []
+
+
+def test_exchange_log_filter_matches_the_connection_name(qtbot, qsettings, tmp_path, fake_umcub):
+    """The library names a UDP connection "ip:port", the row says "ip"; /dev/ttyUSB1 is not /dev/ttyUSB10."""
+    win = developer_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", "", True), Row("/dev/ttyUSB10", 5, "", "smp", "", True),
+                  Row("192.168.1.50", 5, "", "smp", "", True)])
+    click(qtbot, win, win.connect_button)                   # each connection taps one HELLO to node 5
+    win.exchange(hello(6, "/dev/ttyUSB1"))                  # another node on the same port
+    win.exchange.flush()
+    assert win.exchange_view.toPlainText().count("HELLO") == 4
+    win.table.selectRow(0)
+    win.filter_check.setChecked(True)
+    shown = win.exchange_view.toPlainText().splitlines()
+    assert len(shown) == 1 and "/dev/ttyUSB1 " in shown[0] and "node 5" in shown[0]
+    win.table.selectRow(2)                                  # another row: the log follows it
+    shown = win.exchange_view.toPlainText().splitlines()
+    assert len(shown) == 1 and "192.168.1.50:1337" in shown[0]
+    win.table.selectRow(1)
+    assert "/dev/ttyUSB10" in win.exchange_view.toPlainText()
+
+
+def test_exchange_log_filter_on_can(qtbot, qsettings, tmp_path, fake_umcub):
+    """Every node of a CAN channel has the same connection name and SMP packets carry no node: the node of the
+    connection that saw the packet tells them apart."""
+    win = developer_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("can:socketcan:can0", 1, "", "smp", "", True), Row("can:socketcan:can0", 2, "", "smp", "", True)])
+    click(qtbot, win, win.connect_button)                   # one SMP echo per node
+    win.exchange.flush()
+    assert win.exchange_view.toPlainText().count("os/echo") == 2
+    win.table.selectRow(1)
+    win.filter_check.setChecked(True)
+    assert win.exchange_view.toPlainText().count("os/echo") == 1
+
+
+def test_console_sends_a_text_command(qtbot, qsettings, tmp_path, fake_umcub):
+    calls, _ = fake_umcub
+    win = developer_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", "")])
+    win.table.selectRow(0)
+    win.console_input.setText("i")
+    click(qtbot, win, win.send_button)
+    assert ("text", "/dev/ttyUSB0", 5, "i") in calls
+    assert "> i" in win.console_view.toPlainText() and "board 0x46103001" in win.console_view.toPlainText()
+    assert win.console_input.text() == ""

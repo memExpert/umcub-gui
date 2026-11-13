@@ -43,7 +43,7 @@ How the service role is unlocked (password, key, server account) is **open** (se
 | End customer | one device, upload, result |
 | Operator | discovery, upload to many devices, result list, history |
 | Service engineer | + slots, verify, hash, test boot / permanent marks, readback, device info, history export |
-| Developer | + exchange log, bus sniffer, text console, raw SMP |
+| Developer | + exchange log, text console (raw SMP requests: later, when needed) |
 
 ## Features
 
@@ -60,7 +60,7 @@ First version:
   when it cannot); reset afterwards as a checkbox
 - discovery of link nodes; upload to several devices, in parallel where the adapters / bus allow it
 - slots: state, verify, hash, test boot / permanent marks; readback for the service role
-- exchange log, link bus sniffer, text console (developer role)
+- exchange log and text console (developer role); no bus sniffer (decided: not needed)
 - history per device UID with export
 
 Later:
@@ -104,7 +104,7 @@ umcub host library (umcub repository, tools/host/umcub)
   parallel    one shared python-can bus per CAN channel; exclusive_key(): what takes turns   new
   device, link, smp, lite                                                                   exist
   flash       upload with checks; SMP or lite given by the caller                           new
-  tap         callback for every frame sent / received (log, sniffer)                       new
+  tap         callback for every frame sent / received; describe() for the log               new
 ```
 
 - Threads: library calls block; every device job runs in its own worker thread and reports progress through Qt
@@ -169,7 +169,8 @@ In order; each with host tests (and the CLI uses them too):
    (actions on the checked rows, or the selected one when none is checked), roles as a setting without unlock (how
    the service role is unlocked is still open). No Confirm button: in recovery nothing runs, the application
    confirms itself; lite devices have no slots.
-5. Log, sniffer, console; translations; installers; Windows hardware check.
+5. Exchange log and console (done: a Developer tab, umcub v0.5.0 describe()); translations; installers; Windows
+   hardware check.
 
 ## Open questions
 
