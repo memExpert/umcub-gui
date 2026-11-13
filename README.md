@@ -25,6 +25,18 @@ save, the selected device only) and a text console to the selected device.
 - All device logic lives in the umcub host library (`tools/host` of the umcub repository); this repository holds the
   UI and the application layer only.
 
+## Install
+
+The [releases](https://github.com/memExpert/umcub-gui/releases) hold the program, no Python needed:
+
+- Windows: `umcub-gui-<version>-windows-x64.zip` - unpack it and run `umcub-gui\umcub-gui.exe`. The program is not
+  signed, so SmartScreen asks once ("More info" -> "Run anyway").
+- Linux (x86_64): `umcub-gui-<version>-linux-x86_64.AppImage` - `chmod +x` it and run it. Serial ports need the user
+  in the `dialout` (or `uucp`) group; without FUSE, run it with `APPIMAGE_EXTRACT_AND_RUN=1`.
+
+Plugins from the plugin folder can import the host library, Python's standard library and what the program itself
+uses; a plugin needing another package needs the `pip install` setup below.
+
 ## Development
 
 ```sh
@@ -35,6 +47,12 @@ pytest
 ```
 
 To work on the host library at the same time: `pip install -e ../umcub/tools/host` after the line above.
+
+Release: set `__version__` in `umcub_gui/__init__.py` (the package version too), commit, push a tag
+`v<version>`; the Release workflow builds the Windows zip and the Linux AppImage (PyInstaller, `packaging/`), runs
+`umcub-gui --self-test` in each - every module loaded by name, python-can's interfaces, the window - and publishes
+them. Run it by hand from the Actions tab to try a build without a release. Locally, in a venv with the program
+installed (`pip install . pyinstaller`, not `-e`): `pyinstaller --noconfirm packaging/umcub-gui.spec`.
 
 ## License
 

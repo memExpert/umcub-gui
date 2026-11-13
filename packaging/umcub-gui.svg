@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256">
+  <!-- a chip with an arrow down into it: an image going onto a device -->
+  <g stroke="#3a4a5c" stroke-width="3" stroke-linecap="round">
+    <path d="M20 14v-6M32 14v-6M44 14v-6M20 56v-6M32 56v-6M44 56v-6M14 22h-6M14 32h-6M14 42h-6M50 22h6M50 32h6M50 42h6"/>
+  </g>
+  <rect x="14" y="14" width="36" height="36" rx="5" fill="#3a4a5c"/>
+  <path d="M32 21v18M24 31l8 8 8-8" fill="none" stroke="#7fd1ae" stroke-width="4" stroke-linecap="round"
+        stroke-linejoin="round"/>
+  <path d="M23 44h18" stroke="#7fd1ae" stroke-width="4" stroke-linecap="round"/>
+</svg>

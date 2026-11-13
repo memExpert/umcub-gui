@@ -24,7 +24,7 @@ arrive signed (and encrypted, if used) from the firmware build.
 | Custom adapters | Python plugins: a plugin folder (works in the installer build) and pip packages (entry points) |
 | UI language | English first; translations as files added without rebuilding |
 | History | local SQLite, export to CSV / JSON; written through an interface so a server can be added later |
-| Packaging | PyInstaller (one folder per OS), plus `pip install` for developers |
+| Packaging | PyInstaller (one folder per OS): a zip for Windows, an AppImage for Linux, built and published by CI on a tag; `pip install` for developers |
 | License | Apache-2.0, like umcub |
 
 ## Users and roles
@@ -169,8 +169,8 @@ In order; each with host tests (and the CLI uses them too):
    (actions on the checked rows, or the selected one when none is checked), roles as a setting without unlock (how
    the service role is unlocked is still open). No Confirm button: in recovery nothing runs, the application
    confirms itself; lite devices have no slots.
-5. Exchange log and console (done: a Developer tab, umcub v0.5.0 describe()); translations; installers; Windows
-   hardware check.
+5. Exchange log and console (done: a Developer tab, umcub v0.5.0 describe()); installers (done: Windows zip and
+   Linux AppImage from CI, `--self-test` on every build); translations; Windows hardware check.
 
 ## Open questions
 

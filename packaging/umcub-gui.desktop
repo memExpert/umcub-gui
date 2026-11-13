@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=umcub flasher
+Comment=Flash signed images onto devices running the umcub bootloader
+Exec=umcub-gui
+Icon=umcub-gui
+Categories=Development;Electronics;
+Terminal=false

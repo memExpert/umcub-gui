@@ -11,7 +11,17 @@ from .app.settings import Settings
 from .ui.main_window import MainWindow
 
 
-def main():
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["--self-test"]:             # the packaged build checks itself (CI): --self-test [report file]
+        from . import selftest
+        failures = selftest.run()
+        report = "\n".join(failures) if failures else "self-test: ok"
+        if len(argv) > 1:                       # a windowed build (Windows) has no stdout
+            Path(argv[1]).write_text(report + "\n")
+        else:
+            print(report, flush=True)
+        return 1 if failures else 0
     app = QApplication(sys.argv)
     app.setOrganizationName("umcub")
     app.setApplicationName("umcub-gui")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "umcub-gui"
-version = "0.0.1"
+dynamic = ["version"]          # umcub_gui.__version__
 description = "Desktop flasher for devices running the umcub bootloader"
 readme = "README.md"
 license = "Apache-2.0"
@@ -21,6 +21,9 @@ test = ["pytest>=8", "pytest-qt>=4.4"]
 
 [project.gui-scripts]
 umcub-gui = "umcub_gui.__main__:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "umcub_gui.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["umcub_gui*"]
