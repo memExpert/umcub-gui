@@ -31,7 +31,7 @@ def test_ts_is_complete_and_current(tmp_path):
     ts = tmp_path / TS.name
     shutil.copy(TS, ts)
     translations_tool.lupdate(ts)
-    assert ts.read_text() == TS.read_text(), "run: python tools/translations.py update"
+    assert ts.read_text(encoding="utf-8") == TS.read_text(encoding="utf-8"), "run: python tools/translations.py update"
     unfinished = [m.findtext("source") for m in ET.parse(TS).iter("message")
                   if m.find("translation").get("type") in ("unfinished", "vanished", "obsolete")]
     assert unfinished == []
@@ -94,6 +94,6 @@ def test_settings_dialog_offers_the_languages(qtbot, qsettings):
 def test_every_tr_has_its_text_in_the_call():
     """lupdate only sees literal texts: self.tr(h) over a list of names stays English in every language."""
     calls = [f"{p.name}:{n}: {line.strip()}" for p in translations_tool.sources()
-             for n, line in enumerate(p.read_text().splitlines(), 1)
+             for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
              if re.search(r"\btr\((?![\"'])", line)]
     assert calls == []

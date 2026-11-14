@@ -421,7 +421,7 @@ def test_exchange_log_pause_clear_save(qtbot, qsettings, tmp_path, monkeypatch):
     out = tmp_path / "log.txt"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
     win.save_log_button.click()
-    saved = out.read_text().splitlines()
+    saved = out.read_text(encoding="utf-8").splitlines()
     assert len(saved) == 4 and saved[0].endswith(hello(5, "/dev/ttyUSB0").payload.hex())   # all, the bytes whole
     win.clear_log_button.click()
     assert win.exchange_view.toPlainText() == "" and win.exchange.events() == []

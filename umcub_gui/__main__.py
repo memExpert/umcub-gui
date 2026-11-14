@@ -19,7 +19,7 @@ def main(argv=None):
         failures = selftest.run()
         report = "\n".join(failures) if failures else "self-test: ok"
         if len(argv) > 1:                       # a windowed build (Windows) has no stdout
-            Path(argv[1]).write_text(report + "\n")
+            Path(argv[1]).write_text(report + "\n", encoding="utf-8")
         else:
             print(report, flush=True)
         return 1 if failures else 0

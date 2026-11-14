@@ -44,7 +44,7 @@ def write_error_texts():
              "TEXTS = ("]
     lines += [f'    QT_TRANSLATE_NOOP("UmcubError", {t!r}),' for t in texts]
     lines += [")", ""]
-    ERROR_TEXTS.write_text("\n".join(lines))
+    ERROR_TEXTS.write_text("\n".join(lines), encoding="utf-8")
 
 
 def lupdate(ts):

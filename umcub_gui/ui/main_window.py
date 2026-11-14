@@ -206,7 +206,7 @@ class MainWindow(QMainWindow):
     def _save_log(self):
         path, _ = QFileDialog.getSaveFileName(self, self.tr("Save the exchange log"), filter="*.txt")
         if path:
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.writelines(line(ev, umcub.describe(ev), full=True) + "\n" for ev, _ in self.exchange.events())
 
     def send_text(self):

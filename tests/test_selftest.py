@@ -37,7 +37,7 @@ def test_self_test_writes_the_report_to_a_file(tmp_path):
     """A windowed build (Windows) has no stdout: CI reads the report from a file."""
     report = tmp_path / "report.txt"
     assert main(["--self-test", str(report)]) == 0
-    assert report.read_text() == "self-test: ok\n"
+    assert report.read_text(encoding="utf-8") == "self-test: ok\n"
 
 
 def test_self_test_reports_missing_translations(monkeypatch, tmp_path):
