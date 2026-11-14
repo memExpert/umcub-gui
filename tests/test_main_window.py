@@ -488,3 +488,70 @@ def test_a_flash_not_saved_in_the_history_says_so(qtbot, qsettings, tmp_path, fa
     win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image), checked=True)])
     click(qtbot, win, win.flash_button)
     assert "valid" in win.status(0) and "database is locked" in win.status(0) and "1 ok" in win.result.text()
+
+
+def test_a_running_job_cannot_be_bypassed(qtbot, qsettings, tmp_path, fake_umcub, signed_image):
+    """While a batch flashes, another row's selection or Enter in the console starts nothing: a second job would
+    take the window's job (no Cancel, Disconnect / Remove under the flash)."""
+    calls, answers = fake_umcub
+    answers["delay"] = 0.6
+    win = window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image), checked=True),
+                  Row("/dev/ttyUSB1", 6, "", "smp", "", checked=False)])
+    with qtbot.waitSignal(win.job_finished, timeout=10000):
+        win.flash_button.click()
+        batch = win.job
+        win.table.setCurrentCell(1, 1)
+        slots_on = [b.isEnabled() for b in win.slot_buttons]
+        win.console_input.setText("i")
+        win.console_input.returnPressed.emit()
+        same_job, cancel_on = win.job is batch, win.cancel_button.isEnabled()
+    assert slots_on == [False] * len(win.slot_buttons) and same_job and cancel_on
+    assert not [c for c in calls if c[0] == "text"]
+
+
+def test_closing_while_flashing_asks_and_waits(qtbot, qsettings, tmp_path, fake_umcub, signed_image, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    _, answers = fake_umcub
+    answers["delay"] = 0.6
+    win = window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image), checked=True)])
+    win.show()
+    win.flash_button.click()
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+    assert not win.close() and win.job is not None              # kept open, the flash goes on
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    assert win.close() and win.job is None                      # cancelled, waited for, then closed
+    assert "cancel" in win.status(0)
+
+
+def test_the_image_is_checked_against_its_own_rows_device(qtbot, qsettings, tmp_path, fake_umcub, signed_image):
+    _, answers = fake_umcub
+    answers["identity"] = dict(answers["identity"], board_type=0x00010001)     # not the image's board
+    win = window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image), checked=True),
+                  Row("/dev/ttyUSB1", 6, "", "smp", str(signed_image), checked=False)])
+    win.table.setCurrentCell(0, 1)
+    click(qtbot, win, win.connect_button)
+    assert "board type" in win.image_info.text()                # row 0's device is another board
+    win.table.setCurrentCell(1, 1)
+    assert "board type" not in win.image_info.text() and win.device_info.text() == ""     # row 1: not connected
+    win.table.setCurrentCell(0, 1)
+    assert "board type" in win.image_info.text() and win.device_info.text() != ""
+    win.connect_button.click()                                  # Disconnect
+    assert "board type" not in win.image_info.text() and win.device_info.text() == ""
+
+
+def test_settings_saved_are_applied_however_the_dialog_closed(qtbot, qsettings, tmp_path, monkeypatch):
+    from umcub_gui.ui.settings_dialog import SettingsDialog
+    win = window(qtbot, qsettings, tmp_path)
+
+    def exec_(dlg):                         # the user picks a role, OK shows a plugin error, the user gives up
+        dlg.role.setCurrentIndex(dlg.role.findData("customer"))
+        dlg.keepalive.setValue(7)
+        dlg.apply()
+        return 0
+    monkeypatch.setattr(SettingsDialog, "exec", exec_)
+    win.keepalive_timer.start(30000)
+    win.open_settings()
+    assert not win.discover_button.isVisibleTo(win) and win.keepalive_timer.interval() == 7000

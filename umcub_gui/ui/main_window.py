@@ -5,11 +5,12 @@ import time
 from dataclasses import replace
 
 import umcub
-from PySide6.QtCore import QCoreApplication, QSignalBlocker, Qt, QTimer, Signal
+from PySide6.QtCore import QCoreApplication, QEventLoop, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFontDatabase
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox,
-                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QProgressBar,
-                               QPushButton, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+                               QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
+                               QProgressBar, QPushButton, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout,
+                               QWidget)
 
 from .. import __version__
 from ..app import i18n
@@ -41,7 +42,6 @@ class MainWindow(QMainWindow):
         self.keepalive_timer = QTimer(self, timeout=self.keepalive)
         self.keepalive_job = None
         self.failed = []                # table rows the last flash run did not finish
-        self.identity = None            # of the device the last connect reached
         self.setWindowTitle(self.tr("umcub {0}").format(__version__))
         self.tabs = QTabWidget()
         self.tabs.addTab(self._flash_tab(), self.tr("Flash"))
@@ -212,7 +212,7 @@ class MainWindow(QMainWindow):
     def send_text(self):
         i = self.table.currentRow()
         cmd = self.console_input.text().strip()
-        if i < 0 or not cmd:
+        if i < 0 or not cmd or self.job is not None:   # Enter works while the Send button is off
             return
         self.console_input.clear()
         self.console_view.appendPlainText(f"> {cmd}")
@@ -295,8 +295,8 @@ class MainWindow(QMainWindow):
     def rows(self):
         out = []
         for i in range(self.table.rowCount()):
-            node = self.table.item(i, self.COL_NODE).text().strip()
-            out.append(Row(self.table.item(i, self.COL_ADAPTER).text().strip(), int(node) if node.isdigit() else None,
+            out.append(Row(self.table.item(i, self.COL_ADAPTER).text().strip(),
+                           _node(self.table.item(i, self.COL_NODE).text().strip()),
                            self.table.item(i, self.COL_UID).text().strip(),
                            self.table.cellWidget(i, self.COL_PROTOCOL).currentData(),
                            self._image(i),
@@ -364,7 +364,7 @@ class MainWindow(QMainWindow):
     # --- actions -----------------------------------------------------------------------------------------------
 
     def _set_busy(self, busy, cancellable=False):
-        """While a job runs the table keeps its rows: a run refers to them by index."""
+        """While a job runs the table keeps its rows (a run refers to them by index) and nothing else starts."""
         for b in (self.flash_button, self.discover_button, self.connect_button, self.refresh_button,
                   self.add_button, self.remove_button, self.send_button):
             b.setEnabled(not busy)
@@ -377,6 +377,8 @@ class MainWindow(QMainWindow):
         self._slot_row_changed(busy)
 
     def _run(self, job, on_done, cancellable=False):
+        if self.job is not None:
+            return                          # one job at a time: the window follows that one
         self.job = job
         self._set_busy(True, cancellable)
         job.signals.finished.connect(lambda res: self._finished(res, on_done))
@@ -458,11 +460,6 @@ class MainWindow(QMainWindow):
                 if identity:
                     self.table.item(i, self.COL_BOARD).setText(umcub.board_label(identity["board_type"]))
                 self._set_status(i, True, self.tr("connected") + (f": {_version(identity)}" if identity else ""))
-                if i == self.table.currentRow():
-                    self.identity = identity
-                    self.device_info.setText(_describe(identity) if identity else
-                                             self.tr("connected (no link identity)"))
-                    self._show_image()
             self._connected_changed()
             n = sum(not e for _, _, e in results)
             self.show_result(True if n == len(results) else None,
@@ -494,6 +491,7 @@ class MainWindow(QMainWindow):
         self.keepalive_job.start()
 
     def _connected_changed(self):
+        self._show_device()
         on = bool(self.connections)
         self.connect_button.setText(self.tr("Disconnect") if on else self.tr("Connect"))
         if on and not self.keepalive_timer.isActive():
@@ -512,6 +510,8 @@ class MainWindow(QMainWindow):
         self._flash(self.failed)
 
     def _flash(self, indexes):
+        if self.job is not None:
+            return
         s = self.session()
         self.settings.save_session(s)
         run = []
@@ -574,12 +574,31 @@ class MainWindow(QMainWindow):
         self.slot_panel.setVisible(role in ("service", "developer"))
 
     def _current_changed(self, row, col, previous_row, previous_col):
-        self._show_image()
+        self._show_device()
         if row != previous_row:
             self.slot_table.setRowCount(0)      # the slots shown were another device's
             if self.filter_check.isChecked():
                 self._render_log()              # the log of the selected device only
-        self._slot_row_changed()
+        self._slot_row_changed(self.job is not None)
+
+    def _device(self, i):
+        """The open Device of row i (Connect), or None (also while the row is being filled)."""
+        cells = [self.table.item(i, c) for c in (self.COL_ADAPTER, self.COL_NODE, self.COL_UID)]
+        if i < 0 or None in cells:
+            return None
+        spec, node, uid = (c.text().strip() for c in cells)
+        d = self.connections.device(Target(spec, _node(node), uid, "", ""))
+        return d[0] if d else None
+
+    def _show_device(self):
+        """The selected row's connected device (or nothing), and its image checked against it."""
+        dev = self._device(self.table.currentRow())
+        if dev is None:
+            self.device_info.setText("")
+        else:
+            self.device_info.setText(_describe(dev.identity) if dev.identity else
+                                     self.tr("connected (no link identity)"))
+        self._show_image()
 
     def _slot_row_changed(self, busy=False):
         i = self.table.currentRow()
@@ -660,9 +679,10 @@ class MainWindow(QMainWindow):
             return
         text = f"{img.version}   " + (self.tr("board {0}").format(umcub.board_label(img.board_type))
                                       if img.board_type is not None else self.tr("no board type"))
-        if self.identity:
+        dev = self._device(i)
+        if dev is not None and dev.identity:
             try:
-                img.check_board(self.identity["board_type"])
+                img.check_board(dev.identity["board_type"])
             except umcub.UmcubError as e:
                 text += "   " + i18n.message(e)
         self.image_info.setText(text)
@@ -680,14 +700,37 @@ class MainWindow(QMainWindow):
         self.history_table.resizeColumnsToContents()
 
     def open_settings(self):
-        if SettingsDialog(self.settings, self).exec():
-            self._show_image()
-            self.apply_role()
+        SettingsDialog(self.settings, self).exec()      # what it saved counts, also when closed on an error
+        self._show_image()
+        self.apply_role()
+        if self.keepalive_timer.isActive():
+            self.keepalive_timer.setInterval(self.settings.keepalive_s() * 1000)
 
     def closeEvent(self, e):
+        job = self.job
+        if job is not None:
+            if QMessageBox.question(self, self.windowTitle(), self.tr("A job is still running. Stop it and close?")) \
+                    != QMessageBox.StandardButton.Yes:
+                e.ignore()
+                return
+            if hasattr(job, "cancel"):
+                job.cancel()
+            loop = QEventLoop()                 # its last step ends before the ports close
+            job.signals.finished.connect(loop.quit)
+            cap = QTimer(singleShot=True, timeout=loop.quit)
+            cap.start(30000)
+            if self.job is not None:
+                loop.exec()
+            cap.stop()
+        self.keepalive_timer.stop()
         self.settings.save_session(self.session())
         self.connections.close_all()
         super().closeEvent(e)
+
+
+def _node(text):
+    """The node cell: an address, or None (selected by UID)."""
+    return int(text) if text.isdigit() else None
 
 
 def _progress(bar, done, total):

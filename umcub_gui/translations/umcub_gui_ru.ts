@@ -454,6 +454,10 @@
         <translation>ошибка</translation>
     </message>
     <message>
+        <source>A job is still running. Stop it and close?</source>
+        <translation>Задача ещё выполняется. Остановить её и закрыть программу?</translation>
+    </message>
+    <message>
         <source>node {0}   uid {1}   {2}   {3}</source>
         <translation>узел {0}   uid {1}   {2}   {3}</translation>
     </message>
