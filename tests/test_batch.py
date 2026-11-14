@@ -1,5 +1,6 @@
 """Several devices in one run: the rows of one serial port take turns, CAN / UDP rows and other ports run in
 parallel; a failed device does not stop the others; cancel stops what has not finished."""
+from conftest import BrokenHistory
 from umcub_gui.app.batch import BatchJob, Row
 from umcub_gui.app.connections import Connections
 from umcub_gui.app.history import History
@@ -63,3 +64,9 @@ def test_cancel(qtbot, fake_umcub, signed_image, tmp_path):
     results = run(qtbot, job)
     assert results[1].cancelled and not results[1].ok
     assert [c[2] for c in calls if c[0] == "connect"] == [5]           # the second was never opened
+
+
+def test_a_history_failure_does_not_stop_the_batch(qtbot, fake_umcub, signed_image):
+    results = run(qtbot, BatchJob(rows(signed_image, ("/dev/ttyUSB1", 5), ("/dev/ttyUSB1", 6)), "", "", FlashOptions(),
+                                  BrokenHistory(), Connections()))
+    assert [r.ok for r in results] == [True, True]

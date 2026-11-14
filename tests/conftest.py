@@ -23,6 +23,13 @@ def compiled_translations(tmp_path_factory):
         yield out
 
 
+class BrokenHistory:
+    """A history whose database is locked (another instance of the program)."""
+
+    def add(self, record):
+        raise OSError("database is locked")
+
+
 @pytest.fixture
 def qsettings(tmp_path):
     """Settings in a temporary INI file instead of the user's."""
@@ -176,7 +183,7 @@ def fake_umcub(monkeypatch):
             return self._answer("verify", True)
 
         def hash(self, image, slot, off=0, length=0):
-            calls.append(("hash", self.node, image, slot))
+            calls.append(("hash", self.node, image, slot, length))     # length 0: the whole stored image
             return self._answer("hash", (b"\x11" * 32, 300))
 
         def mark(self, image_hash, permanent=False):

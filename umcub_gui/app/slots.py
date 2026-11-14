@@ -3,8 +3,7 @@ one or several devices, and reading a slot back to a file. SMP devices only (lit
 import umcub
 from umcub.smp import file_hash
 
-from . import i18n
-from .jobs import CancellableJob, Job, device_for
+from .jobs import CancellableJob, Job, device_for, error_text
 
 
 class SlotsJob(Job):
@@ -39,8 +38,8 @@ class SlotActionJob(Job):
                         out.append((row, *self._hash(smp, path)))
                     else:
                         out.append((row, *self._mark(smp, self.action == "permanent")))
-            except umcub.UmcubError as e:
-                out.append((row, False, i18n.message(e)))
+            except Exception as e:      # one device failing in any way does not stop the others
+                out.append((row, False, error_text(e)))
         return out
 
     def _verify(self, smp):
@@ -52,7 +51,7 @@ class SlotActionJob(Job):
         img = umcub.Image.load(path)
         if img.encrypted and self.slot == 0:
             return None, "encrypted_primary"
-        sha, _ = smp.hash(self.image, self.slot, 0, img.size)
+        sha, _ = smp.hash(self.image, self.slot)    # the stored image: a range needs UMCUB_CFG_READBACK
         return (True, "matches") if sha == file_hash(img.data) else (False, "differs")
 
     def _mark(self, smp, permanent):

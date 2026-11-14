@@ -541,6 +541,8 @@ class MainWindow(QMainWindow):
     def _row_done(self, i, res):
         if res.ok:
             text = self.tr("OK, {0}").format(self._checked(res.value))
+            if res.error_text:              # done, with a note (not saved in the history)
+                text += f"; {res.error_text}"
         else:
             text = self.tr("cancelled") if res.cancelled else res.error_text
             self.failed.append(i)

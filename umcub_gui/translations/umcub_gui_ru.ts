@@ -9,6 +9,13 @@
     </message>
 </context>
 <context>
+    <name>Jobs</name>
+    <message>
+        <source>not saved in the history: {0}</source>
+        <translation>не сохранено в истории: {0}</translation>
+    </message>
+</context>
+<context>
     <name>MainWindow</name>
     <message>
         <source>umcub {0}</source>
@@ -565,6 +572,10 @@
         <translation>завершение отклонено (образ не годится для этого устройства?): {reason}</translation>
     </message>
     <message>
+        <source>keys given, but the device answered without a SECURE challenge (not a SECURE transport, or a forged answer): no unprotected session</source>
+        <translation>ключи заданы, но устройство ответило без SECURE-запроса (не SECURE-транспорт или поддельный ответ): незащищённая сессия не открывается</translation>
+    </message>
+    <message>
         <source>no SMP answer (not in recovery, no SMP in this build, wrong port / node?)</source>
         <translation>нет ответа SMP (не в режиме восстановления, нет SMP в этой сборке, не тот порт / узел?)</translation>
     </message>
@@ -581,6 +592,10 @@
         <translation>это не подписанный образ MCUboot (нет сигнатуры заголовка)</translation>
     </message>
     <message>
+        <source>option &apos;{option}&apos;: bad value &apos;{value}&apos;</source>
+        <translation>параметр &apos;{option}&apos;: неверное значение &apos;{value}&apos;</translation>
+    </message>
+    <message>
         <source>read cancelled</source>
         <translation>чтение отменено</translation>
     </message>
@@ -591,6 +606,10 @@
     <message>
         <source>signed image without a hash TLV</source>
         <translation>подписанный образ без TLV хеша</translation>
+    </message>
+    <message>
+        <source>the answer to the end frame was lost and its repeat was refused: the upload may have ended; check the slot (umcub verify)</source>
+        <translation>ответ на завершающий кадр потерян, а повтор отклонён: загрузка могла завершиться; проверьте слот (umcub verify)</translation>
     </message>
     <message>
         <source>the device reports the uploaded image invalid (hash, signature or board type)</source>
@@ -647,6 +666,18 @@
     <message>
         <source>{path}: not a board name catalog ({reason})</source>
         <translation>{path}: не каталог названий плат ({reason})</translation>
+    </message>
+    <message>
+        <source>{path}: not an EC P-256 key</source>
+        <translation>{path}: не ключ EC P-256</translation>
+    </message>
+    <message>
+        <source>{port}: {reason} (adapter unplugged, or the device stopped reading)</source>
+        <translation>{port}: {reason} (адаптер отключён или устройство перестало читать)</translation>
+    </message>
+    <message>
+        <source>{value}: neither an image file nor a hash (hex)</source>
+        <translation>{value}: не файл образа и не хеш (hex)</translation>
     </message>
 </context>
 </TS>

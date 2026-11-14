@@ -24,6 +24,8 @@ save, the selected device only) and a text console to the selected device.
 - Linux and Windows; Python, Qt (PySide6).
 - All device logic lives in the umcub host library (`tools/host` of the umcub repository); this repository holds the
   UI and the application layer only.
+- Uses the host library of the tag pinned in `pyproject.toml` (now `host-v0.5.2`); its lite uploads need a
+  bootloader newer than umcub 1.0.0.
 
 ## Install
 

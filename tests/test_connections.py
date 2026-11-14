@@ -86,3 +86,33 @@ def test_node_wins_over_uid(fake_umcub):
     c.open(t("/dev/ttyUSB1", 5, "00" * 12), "smp")
     c.open(t("/dev/ttyUSB1", None, "ab" * 12), "smp")
     assert [x[2:4] for x in calls if x[0] == "connect"] == [(5, None), (None, "ab" * 12)]
+
+
+def test_a_job_on_a_connected_port_goes_over_it(fake_umcub):
+    """A row not connected on a port the window holds open: its job uses that port, not a second one (Windows
+    refuses a second open; on Linux two readers of one RS485 bus steal each other's answers)."""
+    from umcub_gui.app.jobs import device_for
+    calls, _ = fake_umcub
+    c = Connections()
+    c.open(t("/dev/ttyUSB0", 5), "smp")
+    calls.clear()
+    with device_for(t("/dev/ttyUSB0", 6), c) as dev:
+        assert dev.node == 6
+    assert calls == [("connect", "/dev/ttyUSB0", 6, None, "/k/a.pem", "/k/d.pem", "shared"), ("close", "/dev/ttyUSB0", 6)]
+    assert c.port("serial:/dev/ttyUSB0") is c.port("/dev/ttyUSB0")     # one port however it is spelled
+
+
+def test_disconnect_waits_for_a_ping_and_closes_once(fake_umcub):
+    calls, _ = fake_umcub
+    c = Connections()
+    c.open(t("/dev/ttyUSB0", 5), "smp")
+    lock = c.device(t("/dev/ttyUSB0", 5))[1]
+    lock.acquire()                                  # a ping (or a job) is using the device
+    th = threading.Thread(target=c.close_all)
+    th.start()
+    th.join(0.2)
+    assert ("close", "/dev/ttyUSB0", 5) not in calls
+    lock.release()
+    th.join(2)
+    assert calls.count(("close", "/dev/ttyUSB0", 5)) == 1 and not c
+    c.close_all()                                   # nothing left, no KeyError

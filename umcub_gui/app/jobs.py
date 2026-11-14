@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 import umcub
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QCoreApplication, QObject, Signal
 
 from .. import __version__
 from . import i18n
@@ -66,8 +66,12 @@ class Job:
         except umcub.UmcubError as e:
             res = Result(False, error_code=e.code, error_text=i18n.message(e))
         except Exception as e:          # e.g. OSError of an adapter unplugged mid-transfer: still a finished job
-            res = Result(False, error_code="error", error_text=f"{type(e).__name__}: {e}")
-        self.done(res)
+            res = Result(False, error_code="error", error_text=error_text(e))
+        try:
+            self.done(res)
+        except Exception as e:          # e.g. the history database locked by another instance: the result stands
+            note = QCoreApplication.translate("Jobs", "not saved in the history: {0}").format(error_text(e))
+            res.error_text = f"{res.error_text}; {note}" if res.error_text else note
         return res
 
     def run(self):
@@ -75,6 +79,12 @@ class Job:
 
     def done(self, res):
         """After run(), in the worker thread (e.g. the history row)."""
+
+
+def error_text(e):
+    """What went wrong, for a result or a row: a library error in the program's language, any other exception (an
+    adapter unplugged, a plugin's own) as it is."""
+    return i18n.message(e) if isinstance(e, umcub.UmcubError) else f"{type(e).__name__}: {e}"
 
 
 def connect_target(t, conn=None, tap=None):
@@ -86,11 +96,16 @@ def connect_target(t, conn=None, tap=None):
 
 @contextmanager
 def device_for(t, connections):
-    """The target's device: the one Connect keeps open (under its port's lock, left open), else its own connection."""
+    """The target's device: the one Connect keeps open (under its port's lock, left open); else over the port Connect
+    keeps open for other nodes (under its lock: one port, one reader); else its own connection."""
     opened = connections.device(t)
+    port = None if opened else connections.port(t.spec)
     if opened:
         with opened[1]:
             yield opened[0]
+    elif port:
+        with port[1], connect_target(t, port[0]) as dev:
+            yield dev
     else:
         with connect_target(t, tap=connections.tap_for(t.spec, t.node)) as dev:
             yield dev
@@ -141,8 +156,8 @@ class OpenJob(Job):
         for row, t, protocol in self.items:
             try:
                 out.append((row, self.connections.open(t, protocol).identity, ""))
-            except umcub.UmcubError as e:
-                out.append((row, None, i18n.message(e)))
+            except Exception as e:
+                out.append((row, None, error_text(e)))
         return out
 
 

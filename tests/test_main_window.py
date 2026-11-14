@@ -480,3 +480,11 @@ def test_one_image_cell_per_row(qtbot, qsettings, tmp_path):
     buttons = win.table.viewport().findChildren(QPushButton)
     assert len(buttons) == 3
     assert all(any(b.parent() is win.image_widget(i) for i in range(3)) for b in buttons)
+
+
+def test_a_flash_not_saved_in_the_history_says_so(qtbot, qsettings, tmp_path, fake_umcub, signed_image, monkeypatch):
+    win = window(qtbot, qsettings, tmp_path)
+    monkeypatch.setattr(win.history, "add", lambda record: (_ for _ in ()).throw(OSError("database is locked")))
+    win.set_rows([Row("/dev/ttyUSB1", 5, "", "smp", str(signed_image), checked=True)])
+    click(qtbot, win, win.flash_button)
+    assert "valid" in win.status(0) and "database is locked" in win.status(0) and "1 ok" in win.result.text()

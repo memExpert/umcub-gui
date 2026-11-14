@@ -2,6 +2,7 @@
 keepalive: test_connections.py, test_main_window.py)."""
 import umcub
 
+from conftest import BrokenHistory
 from umcub_gui.app.connections import Connections
 from umcub_gui.app.history import History
 from umcub_gui.app.jobs import AdaptersJob, DiscoverJob, FlashJob, FlashOptions, Target
@@ -105,3 +106,16 @@ def test_adapters(qtbot, fake_umcub):
     answers["adapters"] = [umcub.Adapter("/dev/ttyUSB0", "serial", "ttyUSB0", "FT232R", 0x403, 0x6001, "A1", "1-2")]
     res = run(qtbot, AdaptersJob())
     assert res.ok and res.value == answers["adapters"]
+
+
+def test_connect_failing_any_way_does_not_stop_the_others(qtbot, fake_umcub):
+    from umcub_gui.app.jobs import OpenJob
+    _, answers = fake_umcub
+    answers["connect"] = OSError("adapter unplugged")
+    res = run(qtbot, OpenJob([(0, T, "smp"), (1, Target("/dev/ttyUSB2", 6, "", "", ""), "smp")], Connections()))
+    assert res.ok and [r[0] for r in res.value] == [0, 1] and all("unplugged" in r[2] for r in res.value)
+
+
+def test_a_history_failure_keeps_the_flash_result(qtbot, fake_umcub, signed_image):
+    res = run(qtbot, FlashJob(T, str(signed_image), FlashOptions(), BrokenHistory(), Connections()))
+    assert res.ok and res.value == "verify" and "database is locked" in res.error_text

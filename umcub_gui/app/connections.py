@@ -19,7 +19,7 @@ class Connections:
     def __init__(self, tap=None):
         self.tap = tap          # the exchange log, on every connection opened here and by the jobs (tap_for)
         self.names = {}         # device string -> Connection.name its events carry (the log's device filter)
-        self._ports = {}        # spec -> (Connection, lock): serial ports shared by their nodes
+        self._ports = {}        # umcub.exclusive_key -> (Connection, lock): serial ports shared by their nodes
         self._devices = {}      # _key(target) -> (Device, lock, protocol, target)
         self._guard = threading.Lock()
 
@@ -39,12 +39,12 @@ class Connections:
 
     def open(self, t, protocol):
         """Connect to the target's device (keys, SECURE handshake) and keep it; returns the Device."""
-        shared = umcub.exclusive_key(t.spec) is not None
+        medium = umcub.exclusive_key(t.spec)
         with self._guard:
-            port = self._ports.get(t.spec) if shared else None
-            if shared and port is None:
-                port = self._ports[t.spec] = (umcub.open_connection(t.spec, tap=self.tap_for(t.spec)),
-                                                threading.Lock())
+            port = self._ports.get(medium) if medium else None
+            if medium and port is None:
+                port = self._ports[medium] = (umcub.open_connection(t.spec, tap=self.tap_for(t.spec)),
+                                              threading.Lock())
         try:
             dev = connect_target(t, port[0]) if port else connect_target(t, tap=self.tap_for(t.spec, t.node))
         except BaseException:
@@ -60,8 +60,9 @@ class Connections:
         return d[:2] if d else None
 
     def port(self, spec):
-        """(Connection, lock) of an open serial port (to discover over), or None."""
-        return self._ports.get(spec)
+        """(Connection, lock) of the open serial port of `spec` (however it is spelled), or None."""
+        medium = umcub.exclusive_key(spec)
+        return self._ports.get(medium) if medium else None
 
     def ping_all(self):
         """Ping every open device whose port is free; close the ones that do not answer and return their targets."""
@@ -79,12 +80,23 @@ class Connections:
         return lost
 
     def close_all(self):
+        """Close every device, each once its ping or job is done (no longer than a few seconds)."""
         for key in list(self._devices):
-            self._close(key)
+            d = self._devices.get(key)
+            if d:
+                got = d[1].acquire(timeout=5)
+                try:
+                    self._close(key)
+                finally:
+                    if got:
+                        d[1].release()
 
     def _close(self, key):
         with self._guard:
-            dev = self._devices.pop(key)[0]
+            d = self._devices.pop(key, None)    # a ping may have closed it meanwhile
+        if d is None:
+            return
+        dev = d[0]
         try:
             dev.close()
         except (umcub.UmcubError, OSError):
@@ -92,7 +104,9 @@ class Connections:
         self._drop_port(key[0])
 
     def _drop_port(self, spec):
+        medium = umcub.exclusive_key(spec)
         with self._guard:
-            port = self._ports.pop(spec, None) if not any(k[0] == spec for k in self._devices) else None
+            in_use = any(umcub.exclusive_key(k[0]) == medium for k in self._devices)
+            port = self._ports.pop(medium, None) if medium and not in_use else None
         if port:
             port[0].close()

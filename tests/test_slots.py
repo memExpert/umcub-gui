@@ -35,12 +35,20 @@ def test_verify_several(qtbot, fake_umcub):
 
 
 def test_hash_vs_file(qtbot, fake_umcub, signed_image):
-    _, answers = fake_umcub
+    calls, answers = fake_umcub
     data = signed_image.read_bytes()
     answers["hash"] = {5: (hashlib.sha256(data).digest(), len(data)), 6: (b"\0" * 32, len(data))}
     res = run(qtbot, SlotActionJob([(0, t(5), str(signed_image)), (1, t(6), str(signed_image)), (2, t(7), "")],
                                    "hash", 0, 1, Connections()))
     assert [(ok, text) for _, ok, text in res.value] == [(True, "matches"), (False, "differs"), (False, "no_image")]
+    assert [c[4] for c in calls if c[0] == "hash"] == [0, 0]     # the stored image: ranges need READBACK
+
+
+def test_one_device_failing_any_way_does_not_stop_the_others(qtbot, fake_umcub):
+    _, answers = fake_umcub
+    answers["verify"] = {5: OSError("adapter unplugged")}
+    res = run(qtbot, SlotActionJob([(0, t(5), ""), (1, t(6), "")], "verify", 0, 1, Connections()))
+    assert res.ok and res.value[0][:2] == (0, False) and "unplugged" in res.value[0][2] and res.value[1] == (1, True, "valid")
 
 
 def test_marks_use_the_secondary_hash(qtbot, fake_umcub):
