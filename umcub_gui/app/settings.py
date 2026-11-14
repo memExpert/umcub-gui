@@ -57,6 +57,13 @@ class Settings:
     def set_role(self, role):
         self.q.setValue("role", role)
 
+    def language(self):
+        """The window's language: "" = the system's, "en" or a translation's language (i18n.languages())."""
+        return self.q.value("language", "")
+
+    def set_language(self, lang):
+        self.q.setValue("language", lang)
+
     def keepalive_s(self):
         """Seconds between the pings that keep connected devices (and SECURE sessions) alive; under the library's
         20 s idle limit, after which its next request authenticates again."""

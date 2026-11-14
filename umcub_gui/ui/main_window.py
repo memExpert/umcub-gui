@@ -5,13 +5,14 @@ import time
 from dataclasses import replace
 
 import umcub
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QCoreApplication, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFontDatabase
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QProgressBar,
                                QPushButton, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import __version__
+from ..app import i18n
 from ..app.batch import BatchJob, Row
 from ..app.connections import Connections
 from ..app.exchange import ExchangeLog, line
@@ -122,7 +123,8 @@ class MainWindow(QMainWindow):
         """The image slots of the selected row's device and the actions on a slot (service role). The actions go to
         the checked rows, or to the selected one when none is checked; Read to the selected one."""
         self.slot_table = QTableWidget(0, 5)
-        self.slot_table.setHorizontalHeaderLabels([self.tr(h) for h in ("Image", "Slot", "Version", "Hash", "Flags")])
+        self.slot_table.setHorizontalHeaderLabels([
+            self.tr("Image"), self.tr("Slot"), self.tr("Version"), self.tr("Hash"), self.tr("Flags")])
         self.slot_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.slot_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         header = self.slot_table.horizontalHeader()
@@ -219,8 +221,9 @@ class MainWindow(QMainWindow):
 
     def _history_tab(self):
         self.history_table = QTableWidget(0, 10)
-        self.history_table.setHorizontalHeaderLabels([self.tr(h) for h in (
-            "Time", "Result", "Board", "UID", "Node", "Adapter", "Image", "Version", "Checked", "Error")])
+        self.history_table.setHorizontalHeaderLabels([
+            self.tr("Time"), self.tr("Result"), self.tr("Board"), self.tr("UID"), self.tr("Node"), self.tr("Adapter"),
+            self.tr("Image"), self.tr("Version"), self.tr("Checked"), self.tr("Error")])
         self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         return self.history_table
 
@@ -243,12 +246,13 @@ class MainWindow(QMainWindow):
         for col, text in ((self.COL_ADAPTER, r.spec), (self.COL_NODE, "" if r.node is None else str(r.node)),
                           (self.COL_UID, r.uid)):
             self.table.setItem(i, col, QTableWidgetItem(text))
-        for col, text in ((self.COL_BOARD, board), (self.COL_IMAGE, ""), (self.COL_STATUS, "")):
-            item = QTableWidgetItem(text)
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            if col == self.COL_IMAGE:       # the path is data: no text drawn under the cell's widget (_image_cell)
-                item.setData(IMAGE_ROLE, r.image)
-            self.table.setItem(i, col, item)
+        with QSignalBlocker(self.table):    # itemChanged would make an image cell the view does not track yet
+            for col, text in ((self.COL_BOARD, board), (self.COL_IMAGE, ""), (self.COL_STATUS, "")):
+                item = QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if col == self.COL_IMAGE:   # the path is data: no text drawn under the cell's widget (_image_cell)
+                    item.setData(IMAGE_ROLE, r.image)
+                self.table.setItem(i, col, item)
         protocol = QComboBox()
         protocol.addItem("SMP", "smp")
         protocol.addItem(self.tr("lite"), "lite")
@@ -401,7 +405,7 @@ class MainWindow(QMainWindow):
                 if not a.spec:          # e.g. a network port without link: shown, not selectable
                     self.adapter.model().item(self.adapter.count() - 1).setEnabled(False)
             self.adapter.setEditText(text)
-            self.show_result(True, self.tr("{0} adapter(s)").format(len(adapters)))
+            self.show_result(True, self.tr("%n adapter(s)", "", len(adapters)))
         self._run(AdaptersJob(), done)
 
     def discover(self):
@@ -428,7 +432,7 @@ class MainWindow(QMainWindow):
                 if r.spec == spec and i not in found:
                     self._set_status(i, None, self.tr("not found"))
             if devices:
-                self.show_result(True, self.tr("{0} device(s)").format(len(devices)))
+                self.show_result(True, self.tr("%n device(s)", "", len(devices)))
             else:
                 self.show_result(None, self.tr("No device answered on {0}").format(spec))
         self._run(DiscoverJob(spec, self.connections), done)
@@ -529,18 +533,21 @@ class MainWindow(QMainWindow):
         self._set_busy(True, cancellable=True)
         job.start()
 
+    def _checked(self, how):
+        """How a flashed image was checked (umcub.flash()'s answer), as text."""
+        return {"verify": self.tr("checked: valid"), "hash": self.tr("checked: SHA-256 matches"),
+                None: self.tr("not checked")}.get(how, how)
+
     def _row_done(self, i, res):
-        how = {"verify": self.tr("checked: valid"), "hash": self.tr("checked: SHA-256 matches"),
-               None: self.tr("not checked")}
         if res.ok:
-            text = self.tr("OK, {0}").format(how[res.value])
+            text = self.tr("OK, {0}").format(self._checked(res.value))
         else:
             text = self.tr("cancelled") if res.cancelled else res.error_text
             self.failed.append(i)
         self._set_status(i, res.ok, text)
         r = self.rows()[i]
-        self.log.appendPlainText(f"{time.strftime('%H:%M:%S')} {r.spec} "
-                                 + (f"node {r.node}" if r.node is not None else f"uid {r.uid}") + f": {text}")
+        who = self.tr("node {0}").format(r.node) if r.node is not None else self.tr("uid {0}").format(r.uid)
+        self.log.appendPlainText(f"{time.strftime('%H:%M:%S')} {r.spec} {who}: {text}")
 
     def _batch_done(self, results):
         self.job = None
@@ -590,11 +597,13 @@ class MainWindow(QMainWindow):
     def refresh_slots(self):
         def done(images):
             self.slot_table.setRowCount(len(images))
+            names = {"active": self.tr("active"), "confirmed": self.tr("confirmed"), "pending": self.tr("pending"),
+                     "permanent": self.tr("permanent"), "bootable": self.tr("bootable")}
             for k, s in enumerate(images):
-                flags = " ".join(f for f in ("active", "confirmed", "pending", "permanent", "bootable") if s[f])
+                flags = " ".join(text for f, text in names.items() if s[f])
                 for col, text in enumerate((str(s["image"]), str(s["slot"]), s["version"], s["hash"].hex(), flags)):
                     self.slot_table.setItem(k, col, QTableWidgetItem(text))
-            self.show_result(True, self.tr("{0} slot(s)").format(len(images)))
+            self.show_result(True, self.tr("%n slot(s)", "", len(images)))
         self._run(SlotsJob(self._target(self.rows()[self.table.currentRow()]), self.connections), done)
 
     def slot_action(self, action):
@@ -636,7 +645,7 @@ class MainWindow(QMainWindow):
         job = ReadJob(self._target(self.rows()[i]), image, slot, path, self.connections)
         job.signals.progress.connect(lambda done, total: _progress(
             self.table.cellWidget(i, self.COL_PROGRESS), done, total))
-        self._run(job, lambda n: self.show_result(True, self.tr("{0} bytes read to {1}").format(n, path)),
+        self._run(job, lambda n: self.show_result(True, self.tr("%n byte(s) read to {0}", "", n).format(path)),
                   cancellable=True)
 
     def _show_image(self):
@@ -645,7 +654,7 @@ class MainWindow(QMainWindow):
         try:
             img = umcub.Image.load(path)
         except umcub.UmcubError as e:
-            self.image_info.setText(str(e) if path else "")
+            self.image_info.setText(i18n.message(e) if path else "")
             return
         text = f"{img.version}   " + (self.tr("board {0}").format(umcub.board_label(img.board_type))
                                       if img.board_type is not None else self.tr("no board type"))
@@ -653,16 +662,17 @@ class MainWindow(QMainWindow):
             try:
                 img.check_board(self.identity["board_type"])
             except umcub.UmcubError as e:
-                text += "   " + str(e)
+                text += "   " + i18n.message(e)
         self.image_info.setText(text)
 
     def reload_history(self):
         rows = self.history.records()
+        results = {"ok": self.tr("ok"), "error": self.tr("error"), "cancelled": self.tr("cancelled")}
         self.history_table.setRowCount(len(rows))
         for i, r in enumerate(rows):
-            cells = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r.started)), r.result, r.board, r.uid,
-                     "" if r.node is None else str(r.node), r.adapter, r.image_name, r.image_version,
-                     r.checked or "", r.error_text)
+            cells = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r.started)), results.get(r.result, r.result),
+                     r.board, r.uid, "" if r.node is None else str(r.node), r.adapter, r.image_name, r.image_version,
+                     self._checked(r.checked) if r.result == "ok" else "", r.error_text)
             for j, c in enumerate(cells):
                 self.history_table.setItem(i, j, QTableWidgetItem(c))
         self.history_table.resizeColumnsToContents()
@@ -689,8 +699,8 @@ def _version(i):
 
 
 def _describe(i):
-    return (f"node {i['addr']}   uid {i['uid']}   {umcub.board_label(i['board_type'])}   {_version(i)}"
-            + ("   SECURE" if i.get("enc") else ""))
+    return (QCoreApplication.translate("MainWindow", "node {0}   uid {1}   {2}   {3}").format(
+        i["addr"], i["uid"], umcub.board_label(i["board_type"]), _version(i)) + ("   SECURE" if i.get("enc") else ""))
 
 
 def _row(*widgets):

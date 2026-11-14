@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QStandardPaths
 from PySide6.QtWidgets import QApplication
 
+from .app import i18n
 from .app.extensions import load_extensions
 from .app.history import History
 from .app.settings import Settings
@@ -26,6 +27,7 @@ def main(argv=None):
     app.setOrganizationName("umcub")
     app.setApplicationName("umcub-gui")
     settings = Settings()
+    i18n.install(app, settings.language())
     data = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation))
     win = MainWindow(settings, History(data / "history.sqlite"))
     win.show()

@@ -11,7 +11,7 @@ connected (a SECURE session authenticated once, the devices of a serial port sha
 them so the sessions stay open and lost devices show. Shared settings: adapter, SECURE key files, slot, test /
 permanent mark, reset. A history tab (SQLite in the user data folder); the last session, table included, comes back
 at the next start with no row checked; Settings holds the board name files, the plugin folder, the keepalive
-interval and the role.
+interval, the role and the language (the system's by default; English and Russian, at the next start).
 
 Roles only shape the window: customer flashes; operator also discovers and sees the history; service adds the slot
 panel - the image slots of the selected device, verify, hash against the row's image, test boot / permanent marks
@@ -34,6 +34,9 @@ The [releases](https://github.com/memExpert/umcub-gui/releases) hold the program
 - Linux (x86_64): `umcub-gui-<version>-linux-x86_64.AppImage` - `chmod +x` it and run it. Serial ports need the user
   in the `dialout` (or `uucp`) group; without FUSE, run it with `APPIMAGE_EXTRACT_AND_RUN=1`.
 
+A language without a new build: put its `umcub_gui_<lang>.qm` into a `translations` folder next to the program
+(next to `umcub-gui.exe`, or next to the AppImage file); it also replaces a built-in one.
+
 Plugins from the plugin folder can import the host library, Python's standard library and what the program itself
 uses; a plugin needing another package needs the `pip install` setup below.
 
@@ -46,13 +49,19 @@ python -m umcub_gui
 pytest
 ```
 
+Translations (Qt Linguist): `python tools/translations.py release` once for the Russian window (the `.qm` files are
+built, not kept in git); after changing texts `python tools/translations.py update`, then translate the new strings in
+`umcub_gui/translations/*.ts` (pyside6-linguist) - the tests fail while one is missing. Library errors are translated
+by their code's template (`umcub_gui/app/error_texts.py`, written by `update` from the pinned library).
+
 To work on the host library at the same time: `pip install -e ../umcub/tools/host` after the line above.
 
-Release: set `__version__` in `umcub_gui/__init__.py` (the package version too), commit, push a tag
-`v<version>`; the Release workflow builds the Windows zip and the Linux AppImage (PyInstaller, `packaging/`), runs
-`umcub-gui --self-test` in each - every module loaded by name, python-can's interfaces, the window - and publishes
-them. Run it by hand from the Actions tab to try a build without a release. Locally, in a venv with the program
-installed (`pip install . pyinstaller`, not `-e`): `pyinstaller --noconfirm packaging/umcub-gui.spec`.
+Release: set `__version__` in `umcub_gui/__init__.py` (the package version too), commit, push a tag `v<version>`;
+the Release workflow compiles the translations, builds the Windows zip and the Linux AppImage (PyInstaller,
+`packaging/`), runs `umcub-gui --self-test` in each - every module loaded by name, python-can's interfaces, the
+window, the translations - and publishes them. Run it by hand from the Actions tab to try a build without a release.
+Locally, in a venv with the program installed (`pip install . pyinstaller`, not `-e`):
+`python tools/translations.py release`, then `pyinstaller --noconfirm packaging/umcub-gui.spec`.
 
 ## License
 

@@ -30,6 +30,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: test "v$(python -c 'import umcub_gui; print(umcub_gui.__version__)')" = "$GITHUB_REF_NAME"
+      - run: python tools/translations.py release
       - run: pyinstaller --noconfirm packaging/umcub-gui.spec
 
       - name: Linux AppImage

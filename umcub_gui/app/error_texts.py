@@ -1,0 +1,40 @@
+"""The message templates of the umcub host library (umcub.errors.MESSAGES), for lupdate: the program
+translates a library error by its template (i18n.message). Written by tools/translations.py update;
+do not edit."""
+from PySide6.QtCore import QT_TRANSLATE_NOOP
+
+TEXTS = (
+    QT_TRANSLATE_NOOP("UmcubError", 'CAN send: {reason}'),
+    QT_TRANSLATE_NOOP("UmcubError", 'CAN {interface}:{channel}: {reason}'),
+    QT_TRANSLATE_NOOP("UmcubError", 'CAN: can:<python-can interface>:<channel>, e.g. can:socketcan:can0'),
+    QT_TRANSLATE_NOOP("UmcubError", 'SECURE transport: the admin key and the device key are needed'),
+    QT_TRANSLATE_NOOP("UmcubError", 'SMP: {reason}'),
+    QT_TRANSLATE_NOOP("UmcubError", 'a test boot / permanent mark needs the secondary slot'),
+    QT_TRANSLATE_NOOP("UmcubError", 'authentication failed (wrong admin key, device key or no answer)'),
+    QT_TRANSLATE_NOOP("UmcubError", 'begin refused: {reason}'),
+    QT_TRANSLATE_NOOP("UmcubError", 'data at {offset} refused: {reason}'),
+    QT_TRANSLATE_NOOP("UmcubError", 'device refuses SECURE sessions (readout protection off, UMCUB_CFG_LINK_REQUIRE_RDP)'),
+    QT_TRANSLATE_NOOP("UmcubError", 'device: {reason} (rc {rc})'),
+    QT_TRANSLATE_NOOP("UmcubError", 'end refused (not a valid image for this device?): {reason}'),
+    QT_TRANSLATE_NOOP("UmcubError", 'no SMP answer (not in recovery, no SMP in this build, wrong port / node?)'),
+    QT_TRANSLATE_NOOP("UmcubError", 'no answer from the bootloader (lite upload)'),
+    QT_TRANSLATE_NOOP("UmcubError", 'no answer to HELLO (wrong node, not in recovery, or not a link transport)'),
+    QT_TRANSLATE_NOOP("UmcubError", 'not a signed MCUboot image (no header magic)'),
+    QT_TRANSLATE_NOOP("UmcubError", 'read cancelled'),
+    QT_TRANSLATE_NOOP("UmcubError", 'select the device by node address or UID'),
+    QT_TRANSLATE_NOOP("UmcubError", 'signed image without a hash TLV'),
+    QT_TRANSLATE_NOOP("UmcubError", 'the device reports the uploaded image invalid (hash, signature or board type)'),
+    QT_TRANSLATE_NOOP("UmcubError", 'the image has no board type, the device is {device}'),
+    QT_TRANSLATE_NOOP("UmcubError", 'the image is for board type {image}, the device is {device}'),
+    QT_TRANSLATE_NOOP("UmcubError", 'the image on the device differs from the file (SHA-256)'),
+    QT_TRANSLATE_NOOP("UmcubError", "transport '{scheme}' is already registered"),
+    QT_TRANSLATE_NOOP("UmcubError", "transport '{scheme}' returned {type}, not a umcub Connection"),
+    QT_TRANSLATE_NOOP("UmcubError", "transport scheme '{scheme}': lower-case letters, digits, '-' and '_'"),
+    QT_TRANSLATE_NOOP("UmcubError", "unknown option '{option}' (known: {known})"),
+    QT_TRANSLATE_NOOP("UmcubError", 'upload cancelled'),
+    QT_TRANSLATE_NOOP("UmcubError", 'upload refused: {reason} (rc {rc})'),
+    QT_TRANSLATE_NOOP("UmcubError", '{name}: the node is selected by its address, not by UID'),
+    QT_TRANSLATE_NOOP("UmcubError", '{path}: a private key is needed'),
+    QT_TRANSLATE_NOOP("UmcubError", '{path}: not a PEM key'),
+    QT_TRANSLATE_NOOP("UmcubError", '{path}: not a board name catalog ({reason})'),
+)

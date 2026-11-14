@@ -6,4 +6,3 @@ dist/
 .venv/
 .pytest_cache/
 *.qm
-!umcub_gui/translations/*.qm

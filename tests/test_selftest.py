@@ -38,3 +38,10 @@ def test_self_test_writes_the_report_to_a_file(tmp_path):
     report = tmp_path / "report.txt"
     assert main(["--self-test", str(report)]) == 0
     assert report.read_text() == "self-test: ok\n"
+
+
+def test_self_test_reports_missing_translations(monkeypatch, tmp_path):
+    """A build made without tools/translations.py release would start in English only."""
+    from umcub_gui.app import i18n
+    monkeypatch.setattr(i18n, "BUILTIN", tmp_path)
+    assert any("translations" in f for f in selftest.run())

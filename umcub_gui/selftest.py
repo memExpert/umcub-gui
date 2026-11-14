@@ -53,18 +53,45 @@ def _adapters():
         raise RuntimeError("; ".join(errors))
 
 
+_qapp = None
+
+
+def _app():
+    """The one QApplication of the steps (kept: an unreferenced QApplication is deleted at once)."""
+    global _qapp
+    from PySide6.QtWidgets import QApplication
+    _qapp = QApplication.instance() or QApplication([])
+    return _qapp
+
+
 def _window():
     from PySide6.QtCore import QSettings
-    from PySide6.QtWidgets import QApplication
 
     from .app.history import History
     from .app.settings import Settings
     from .ui.main_window import MainWindow
-    app = QApplication.instance() or QApplication([])   # noqa: F841 - held: unreferenced, it is deleted at once
+    _app()
     with tempfile.TemporaryDirectory() as d:
         history = History(Path(d) / "h.sqlite")
         MainWindow(Settings(QSettings(str(Path(d) / "s.ini"), QSettings.Format.IniFormat)), history).close()
         history.db.close()
+
+
+def _translations():
+    """Every built-in language loads with Qt's own translations (dialog buttons); a build without them fails."""
+    from PySide6.QtCore import QCoreApplication
+
+    from .app import i18n
+    langs = i18n.languages()
+    if not langs:
+        raise RuntimeError("no translations (tools/translations.py release before the build)")
+    app = _app()
+    try:
+        for lang in langs:
+            if i18n.install(app, lang) != lang or QCoreApplication.translate("QPlatformTheme", "Cancel") == "Cancel":
+                raise RuntimeError(f"{lang} does not load (or Qt's own translation is missing)")
+    finally:
+        i18n.install(app, "en")
 
 
 def run():
@@ -75,7 +102,8 @@ def run():
             importlib.import_module(m)
         except Exception as e:
             failures.append(f"module {m}: {type(e).__name__}: {e}")
-    for name, step in (("CAN", _can), ("umcub.adapters()", _adapters), ("window", _window)):
+    for name, step in (("CAN", _can), ("umcub.adapters()", _adapters), ("window", _window),
+                       ("translations", _translations)):
         try:
             step()
         except Exception as e:

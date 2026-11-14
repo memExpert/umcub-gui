@@ -342,7 +342,7 @@ def test_read_slot_to_a_file(qtbot, qsettings, tmp_path, fake_umcub, monkeypatch
     win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", "")])
     win.table.selectRow(0)
     click(qtbot, win, win.read_button)
-    assert out.read_bytes() == answers["read"] and "300 bytes" in win.result.text()
+    assert out.read_bytes() == answers["read"] and "300 byte(s)" in win.result.text()
 
 
 def test_lite_row_has_no_slots(qtbot, qsettings, tmp_path, fake_umcub):
@@ -470,3 +470,13 @@ def test_console_sends_a_text_command(qtbot, qsettings, tmp_path, fake_umcub):
     assert ("text", "/dev/ttyUSB0", 5, "i") in calls
     assert "> i" in win.console_view.toPlainText() and "board 0x46103001" in win.console_view.toPlainText()
     assert win.console_input.text() == ""
+
+
+def test_one_image_cell_per_row(qtbot, qsettings, tmp_path):
+    """Filling a row makes its image cell once: a second one stayed over the first columns, untracked."""
+    win = window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", "/img/a.signed.bin"), Row("/dev/ttyUSB0", 6, "", "lite", "")])
+    win.add_row()
+    buttons = win.table.viewport().findChildren(QPushButton)
+    assert len(buttons) == 3
+    assert all(any(b.parent() is win.image_widget(i) for i in range(3)) for b in buttons)

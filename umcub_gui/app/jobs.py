@@ -12,6 +12,7 @@ import umcub
 from PySide6.QtCore import QObject, Signal
 
 from .. import __version__
+from . import i18n
 from .history import Record
 
 
@@ -61,9 +62,9 @@ class Job:
         try:
             res = Result(True, self.run())
         except umcub.Cancelled as e:
-            res = Result(False, cancelled=True, error_code=e.code, error_text=str(e))
+            res = Result(False, cancelled=True, error_code=e.code, error_text=i18n.message(e))
         except umcub.UmcubError as e:
-            res = Result(False, error_code=e.code, error_text=str(e))
+            res = Result(False, error_code=e.code, error_text=i18n.message(e))
         except Exception as e:          # e.g. OSError of an adapter unplugged mid-transfer: still a finished job
             res = Result(False, error_code="error", error_text=f"{type(e).__name__}: {e}")
         self.done(res)
@@ -141,7 +142,7 @@ class OpenJob(Job):
             try:
                 out.append((row, self.connections.open(t, protocol).identity, ""))
             except umcub.UmcubError as e:
-                out.append((row, None, str(e)))
+                out.append((row, None, i18n.message(e)))
         return out
 
 

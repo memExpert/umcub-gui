@@ -115,8 +115,8 @@ umcub host library (umcub repository, tools/host/umcub)
   Windows open a channel once); the app runs one thread per medium, the rows of a medium in turn.
 - Errors: the library raises `UmcubError` subclasses with English text. For translations they also carry a stable
   code and parameters; the GUI translates by code and shows the text as a fallback.
-- Translations: Qt Linguist `.ts` sources, compiled `.qm` files in a `translations/` folder next to the app, loaded
-  by locale or a setting; a new language is one file.
+- Translations: Qt Linguist `.ts` sources (tools/translations.py), `.qm` built into the package and loaded from a
+  `translations/` folder next to the program too, by the system locale or a setting; a new language is one file.
 - Connections: Connect keeps the checked devices open until Disconnect (one port per serial adapter, shared by its
   nodes), a keepalive ping (interval in Settings) keeps SECURE sessions alive and shows lost devices; jobs use the
   open connections, or open their own when not connected.
@@ -170,7 +170,8 @@ In order; each with host tests (and the CLI uses them too):
    the service role is unlocked is still open). No Confirm button: in recovery nothing runs, the application
    confirms itself; lite devices have no slots.
 5. Exchange log and console (done: a Developer tab, umcub v0.5.0 describe()); installers (done: Windows zip and
-   Linux AppImage from CI, `--self-test` on every build); translations; Windows hardware check.
+   Linux AppImage from CI, `--self-test` on every build); translations (done: Russian, system language or Settings,
+   library errors by code, extra .qm next to the program); Windows hardware check.
 
 ## Open questions
 

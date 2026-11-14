@@ -3,6 +3,7 @@ one or several devices, and reading a slot back to a file. SMP devices only (lit
 import umcub
 from umcub.smp import file_hash
 
+from . import i18n
 from .jobs import CancellableJob, Job, device_for
 
 
@@ -39,7 +40,7 @@ class SlotActionJob(Job):
                     else:
                         out.append((row, *self._mark(smp, self.action == "permanent")))
             except umcub.UmcubError as e:
-                out.append((row, False, str(e)))
+                out.append((row, False, i18n.message(e)))
         return out
 
     def _verify(self, smp):

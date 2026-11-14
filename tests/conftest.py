@@ -1,6 +1,26 @@
+import importlib.util
+from pathlib import Path
+
 import pytest
 import umcub
 from PySide6.QtCore import QSettings
+
+from umcub_gui.app import i18n
+
+_spec = importlib.util.spec_from_file_location("translations_tool",
+                                               Path(__file__).resolve().parent.parent / "tools" / "translations.py")
+translations_tool = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(translations_tool)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def compiled_translations(tmp_path_factory):
+    """The .qm files built from the .ts sources (not kept in the tree), where the program looks for them."""
+    out = tmp_path_factory.mktemp("qm")
+    translations_tool.release(out)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(i18n, "BUILTIN", out)
+        yield out
 
 
 @pytest.fixture

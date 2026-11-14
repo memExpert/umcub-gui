@@ -1,8 +1,10 @@
 """Settings dialog: board name files (a later file wins), the plugin folder with what failed to load, the keepalive
-interval of connected devices and the role (what the window shows)."""
+interval of connected devices, the role (what the window shows) and the language (at the next start)."""
+from PySide6.QtCore import QLocale
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
                                QLineEdit, QListWidget, QPushButton, QSpinBox, QVBoxLayout)
 
+from ..app import i18n
 from ..app.extensions import load_extensions
 from ..app.settings import ROLES
 
@@ -24,7 +26,13 @@ class SettingsDialog(QDialog):
                                       self.tr("Developer: + exchange log, text console"))):
             self.role.addItem(text, role)
         self.role.setCurrentIndex(max(0, self.role.findData(settings.role())))
-        self.keepalive = QSpinBox(minimum=5, maximum=19, suffix=" s", value=settings.keepalive_s())
+        self.language = QComboBox()
+        self.language.addItem(self.tr("System language"), "")
+        self.language.addItem("English", "en")
+        for lang in sorted(i18n.languages()):
+            self.language.addItem(QLocale(lang).nativeLanguageName().capitalize(), lang)
+        self.language.setCurrentIndex(max(0, self.language.findData(settings.language())))
+        self.keepalive = QSpinBox(minimum=5, maximum=19, suffix=self.tr(" s"), value=settings.keepalive_s())
         self.keepalive.setToolTip(self.tr("Under 20 s: after 20 s without traffic the next request logs in again"))
         self.errors = QLabel(wordWrap=True)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -46,6 +54,7 @@ class SettingsDialog(QDialog):
         form.addRow(self.tr("Plugin folder"), folder)
         form.addRow(self.tr("Keep connected devices alive every"), self.keepalive)
         form.addRow(self.tr("Role (what the window shows)"), self.role)
+        form.addRow(self.tr("Language (at the next start)"), self.language)
         form.addRow(self.errors)
         form.addRow(buttons)
 
@@ -64,6 +73,7 @@ class SettingsDialog(QDialog):
         self.settings.set_plugins_folder(self.plugins.text().strip())
         self.settings.set_keepalive_s(self.keepalive.value())
         self.settings.set_role(self.role.currentData())
+        self.settings.set_language(self.language.currentData())
         errors = load_extensions(self.settings)
         if errors:
             self.errors.setText("\n".join(errors))
