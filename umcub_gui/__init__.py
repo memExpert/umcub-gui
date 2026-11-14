@@ -3,4 +3,4 @@
 Layers (docs/plan.md): ui/ (Qt widgets, no device logic) -> app/ (jobs, settings,
 history, plugins) -> the umcub host library (adapters, connections, SMP, link).
 """
-__version__ = "1.0.0"
+__version__ = "1.1.0"
