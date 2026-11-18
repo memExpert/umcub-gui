@@ -11,7 +11,8 @@ a = Analysis(
     ["launcher.py"],
     # python-can imports its interfaces by name (can:<interface>:<channel>). From its own table, not by importing them
     # (collect_submodules): a Windows-only interface fails to import on Linux and would be left out silently.
-    hiddenimports=sorted(module for module, _ in BACKENDS.values()),
+    # The host library imports can-isotp by name too (umcub connection._import_can): PyInstaller cannot see it.
+    hiddenimports=sorted(module for module, _ in BACKENDS.values()) + ["isotp"],
     datas=[(os.path.join(SPECPATH, "..", "umcub_gui", "translations", "*.qm"), "umcub_gui/translations")],
 )
 pyz = PYZ(a.pure)
