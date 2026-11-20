@@ -704,8 +704,8 @@
         <translation>загрузка отклонена: {reason} (rc {rc})</translation>
     </message>
     <message>
-        <source>{name}: keys given, but no SECURE umcub link session here (a CAN node is selected by its IDs; on serial / UDP give --node or --uid)</source>
-        <translation>{name}: ключи заданы, но здесь нет SECURE-сессии umcub link (узел CAN выбирается своими ID; для последовательного порта / UDP укажите узел или UID)</translation>
+        <source>{name}: keys given, but no SECURE umcub link session here (CAN: give --node, not 0; on serial / UDP give --node or --uid)</source>
+        <translation>{name}: ключи заданы, но здесь нет SECURE-сессии umcub link (CAN: укажите узел, не 0; для последовательного порта / UDP - узел или UID)</translation>
     </message>
     <message>
         <source>{name}: the node is selected by its address, not by UID</source>

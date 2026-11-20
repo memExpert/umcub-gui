@@ -113,8 +113,8 @@ umcub host library (umcub repository, tools/host/umcub)
   writing its flash), so its devices take turns; CAN and UDP devices run in parallel. The library tells which is which
   (`umcub.exclusive_key(spec, node)`: a serial port, or one CAN node's IDs) and shares one python-can bus per CAN
   channel (single-handle drivers such as PCAN on Windows open a channel once); the app runs one thread per medium,
-  the rows of a medium in turn. The SECURE key files go only to umcub link rows (serial / UDP with a node or UID):
-  the library refuses keys it cannot use.
+  the rows of a medium in turn. The SECURE key files go only to umcub link rows (serial / UDP with a node or UID, a CAN
+  node other than 0: SECURE over its IDs): the library refuses keys it cannot use.
 - Errors: the library raises `UmcubError` subclasses with English text. For translations they also carry a stable
   code and parameters; the GUI translates by code and shows the text as a fallback.
 - Translations: Qt Linguist `.ts` sources (tools/translations.py), `.qm` built into the package and loaded from a

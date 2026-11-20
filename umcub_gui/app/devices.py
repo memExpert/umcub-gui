@@ -19,10 +19,11 @@ def match_discovered(spec, rows, devices):
     adapter, or the same UID for a device without an address."""
     known = {(r.spec, r.node if r.node is not None else r.uid): i for i, r in enumerate(rows)}
     found = []
-    for d in devices:            # link identities (serial / UDP) or {"addr", "protocol"} (CAN)
+    for d in devices:            # link identities (serial / UDP, SECURE CAN nodes) or {"addr", "protocol"} (CAN)
         node, uid = (d["addr"] or None if "uid" in d else d["addr"]), d.get("uid", "")
+        protocol = d.get("protocol", "smp")
         found.append(Found(known.get((spec, node if node is not None else uid)), node, uid,
-                           d.get("protocol", "smp"), d))
+                           "smp" if protocol == "link" else protocol, d))      # a SECURE CAN node: SMP in its session
     seen = {f.index for f in found}
     return found, [i for i, r in enumerate(rows) if r.spec == spec and i not in seen]
 

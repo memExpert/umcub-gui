@@ -1,4 +1,4 @@
-"""LOW findings of the review: keys only for link rows (host library 0.5.3 refuses unused keys), old saved
+"""LOW findings of the review: keys only for link rows (the host library refuses unused keys), old saved
 sessions, self-test modules, history paging and history error texts in the current language, device logic in app/."""
 import json
 
@@ -14,7 +14,8 @@ from umcub_gui.app.settings import Settings
 
 def test_keys_only_where_a_secure_session_can_follow(fake_umcub):
     calls, _ = fake_umcub
-    for spec, node, uid, keys in (("can:socketcan:can0", 5, "", False),     # a CAN node: selected by its IDs
+    for spec, node, uid, keys in (("can:socketcan:can0", 5, "", True),      # CAN node 5: SECURE over its IDs
+                                  ("can:socketcan:can0", 0, "", False),     # CAN node 0: never SECURE
                                   ("plug:x", 5, "", False),                  # a plugin adapter selecting the node
                                   ("/dev/ttyUSB0", None, "", False),         # no node, no UID: no link session
                                   ("/dev/ttyUSB0", 5, "", True), ("/dev/ttyUSB0", None, "00" * 12, True)):
@@ -85,6 +86,9 @@ def test_discovered_devices_matched_to_rows():
     assert missing == []
     found, missing = match_discovered("/dev/ttyUSB1", rows, [{"addr": 3, "protocol": "lite"}])    # CAN answer
     assert [(f.index, f.node, f.protocol) for f in found] == [(None, 3, "lite")] and missing == [2]
+    secure = {"protocol": "link", "addr": 4, "uid": "cc" * 12, "board_type": 1, "version": "1.1.0", "link": 2}
+    found, _ = match_discovered("can:x", rows, [secure])       # a SECURE CAN node: SMP in its session
+    assert [(f.node, f.uid, f.protocol) for f in found] == [(4, "cc" * 12, "smp")]
 
 
 def test_image_check(signed_image):

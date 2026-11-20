@@ -92,10 +92,10 @@ def error_text(e):
 def connect_target(t, conn=None, tap=None):
     """umcub.connect() of a target, over `conn` (an open port) or its own connection (with `tap`, the exchange log).
     A node address selects the device; the UID only one without an address (the library prefers the UID). The keys
-    go only where a umcub link session can use them: the library refuses them without a node or UID, and on an
-    adapter that selects the node itself: CAN (its IDs) gets none, a plugin's is connected again without them."""
+    go only where a umcub link session can use them: the library refuses them without a node or UID, on CAN node 0
+    and on a plugin adapter that selects the node itself - those are connected again without them."""
     uid = (t.uid or None) if t.node is None else None
-    if (t.admin_key or t.device_key) and (t.node is not None or uid is not None) and not t.spec.startswith("can:"):
+    if (t.admin_key or t.device_key) and (t.node is not None or uid is not None):
         try:
             return umcub.connect(conn or t.spec, node=t.node, uid=uid, admin_key=t.admin_key or None,
                                  device_key=t.device_key or None, tap=tap)

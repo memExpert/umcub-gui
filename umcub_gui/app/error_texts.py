@@ -39,7 +39,7 @@ TEXTS = (
     QT_TRANSLATE_NOOP("UmcubError", "unknown option '{option}' (known: {known})"),
     QT_TRANSLATE_NOOP("UmcubError", 'upload cancelled'),
     QT_TRANSLATE_NOOP("UmcubError", 'upload refused: {reason} (rc {rc})'),
-    QT_TRANSLATE_NOOP("UmcubError", '{name}: keys given, but no SECURE umcub link session here (a CAN node is selected by its IDs; on serial / UDP give --node or --uid)'),
+    QT_TRANSLATE_NOOP("UmcubError", '{name}: keys given, but no SECURE umcub link session here (CAN: give --node, not 0; on serial / UDP give --node or --uid)'),
     QT_TRANSLATE_NOOP("UmcubError", '{name}: the node is selected by its address, not by UID'),
     QT_TRANSLATE_NOOP("UmcubError", '{path}: a private key is needed'),
     QT_TRANSLATE_NOOP("UmcubError", '{path}: not a PEM key'),
