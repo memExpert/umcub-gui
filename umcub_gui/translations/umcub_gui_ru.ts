@@ -624,6 +624,10 @@
         <translation>ключи заданы, но устройство ответило без SECURE-запроса (не SECURE-транспорт или поддельный ответ): незащищённая сессия не открывается</translation>
     </message>
     <message>
+        <source>no SECURE session (the handshake failed): nothing is sent or taken in the clear</source>
+        <translation>нет SECURE-сессии (аутентификация не удалась): открытым текстом ничего не передаётся и не принимается</translation>
+    </message>
+    <message>
         <source>no SMP answer (not in recovery, no SMP in this build, wrong port / node?)</source>
         <translation>нет ответа SMP (не в режиме восстановления, нет SMP в этой сборке, не тот порт / узел?)</translation>
     </message>
@@ -634,6 +638,10 @@
     <message>
         <source>no answer to HELLO (wrong node, not in recovery, or not a link transport)</source>
         <translation>нет ответа на HELLO (не тот узел, не в режиме восстановления или транспорт не link)</translation>
+    </message>
+    <message>
+        <source>node {addr} is another device now (UID {uid}, was {was}): connect again to talk to it</source>
+        <translation>по адресу {addr} теперь другое устройство (UID {uid}, было {was}): подключитесь заново, чтобы работать с ним</translation>
     </message>
     <message>
         <source>not a signed MCUboot image (no header magic)</source>
