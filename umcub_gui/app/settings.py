@@ -33,7 +33,7 @@ class Settings:
             if v is None:
                 continue
             if f.name == "rows":
-                v = [Row(**r) for r in json.loads(v)]
+                v = _rows(v)
             elif f.name == "reset":
                 v = v in (True, "true", "1")
             setattr(s, f.name, v)
@@ -77,3 +77,14 @@ class Settings:
 
     def set_plugins_folder(self, folder):
         self.q.setValue("plugins_folder", folder)
+
+
+def _rows(text):
+    """The saved table: fields of another program version left out or at their defaults, nothing on a damaged value
+    (the program must start)."""
+    names = {f.name for f in fields(Row)}
+    empty = {"node": None, "uid": "", "protocol": "smp", "image": ""}     # fields an older version did not save
+    try:
+        return [Row(**{**empty, **{k: v for k, v in r.items() if k in names}}) for r in json.loads(text)]
+    except (ValueError, TypeError, AttributeError):
+        return []

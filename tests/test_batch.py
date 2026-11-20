@@ -70,3 +70,12 @@ def test_a_history_failure_does_not_stop_the_batch(qtbot, fake_umcub, signed_ima
     results = run(qtbot, BatchJob(rows(signed_image, ("/dev/ttyUSB1", 5), ("/dev/ttyUSB1", 6)), "", "", FlashOptions(),
                                   BrokenHistory(), Connections()))
     assert [r.ok for r in results] == [True, True]
+
+
+def test_two_rows_of_one_can_node_take_turns(qtbot, fake_umcub, signed_image, tmp_path):
+    """One node's CAN IDs carry one ISO-TP transfer at a time (umcub.exclusive_key(spec, node))."""
+    _, answers = fake_umcub
+    answers["delay"] = 0.3
+    rs = rows(signed_image, ("can:virtual:x", 1), ("can:virtual:x", 1))
+    results = run(qtbot, BatchJob(rs, "", "", FlashOptions(), History(tmp_path / "h.sqlite"), Connections()))
+    assert [r.ok for r in results] == [True, True] and answers["most_at_once"] == {"can:virtual:x": 1}

@@ -121,6 +121,8 @@ def fake_umcub(monkeypatch):
         calls.append(("connect", spec, node, uid, admin_key, device_key) + (("shared",) if shared else ()))
         if not shared:
             tapped(tap, spec)
+        if (admin_key or device_key) and spec.startswith(("can:", "plug:")):    # the adapter selects the node
+            raise umcub.UmcubError(code="link.keys_unused", name=spec)
         if isinstance(answers.get("connect"), Exception):
             raise answers["connect"]
         return FakeDevice(answers["identity"], spec, node, calls, answers)

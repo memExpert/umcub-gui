@@ -39,7 +39,7 @@ class BatchJob:
     def start(self):
         groups = {}
         for i, r in enumerate(self.rows):
-            groups.setdefault(umcub.exclusive_key(r.spec) or ("parallel", i), []).append(i)
+            groups.setdefault(umcub.exclusive_key(r.spec, r.node) or ("parallel", i), []).append(i)
         results = [None] * len(self.rows)
         threads = [threading.Thread(target=self._group, args=(g, results), daemon=True) for g in groups.values()]
 

@@ -38,9 +38,12 @@ class Connections:
         return bool(self._devices)
 
     def open(self, t, protocol):
-        """Connect to the target's device (keys, SECURE handshake) and keep it; returns the Device."""
+        """Connect to the target's device (keys, SECURE handshake) and keep it; returns the Device (the one already
+        open for a second row of the same device)."""
         medium = umcub.exclusive_key(t.spec)
         with self._guard:
+            if _key(t) in self._devices:
+                return self._devices[_key(t)][0]
             port = self._ports.get(medium) if medium else None
             if medium and port is None:
                 port = self._ports[medium] = (umcub.open_connection(t.spec, tap=self.tap_for(t.spec)),

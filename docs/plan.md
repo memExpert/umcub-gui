@@ -111,8 +111,10 @@ umcub host library (umcub repository, tools/host/umcub)
   signals. `Smp` already owns one asyncio loop per instance, so one `Smp` per thread works.
 - Several devices (decided): a serial port is one half-duplex bus (RS485 has no arbitration, a device answers after
   writing its flash), so its devices take turns; CAN and UDP devices run in parallel. The library tells which is which
-  (`umcub.exclusive_key(spec)`) and shares one python-can bus per CAN channel (single-handle drivers such as PCAN on
-  Windows open a channel once); the app runs one thread per medium, the rows of a medium in turn.
+  (`umcub.exclusive_key(spec, node)`: a serial port, or one CAN node's IDs) and shares one python-can bus per CAN
+  channel (single-handle drivers such as PCAN on Windows open a channel once); the app runs one thread per medium,
+  the rows of a medium in turn. The SECURE key files go only to umcub link rows (serial / UDP with a node or UID):
+  the library refuses keys it cannot use.
 - Errors: the library raises `UmcubError` subclasses with English text. For translations they also carry a stable
   code and parameters; the GUI translates by code and shows the text as a fallback.
 - Translations: Qt Linguist `.ts` sources (tools/translations.py), `.qm` built into the package and loaded from a
@@ -123,8 +125,9 @@ umcub host library (umcub repository, tools/host/umcub)
 - Settings: QSettings (adapter defaults, saved connections, key file paths, role); the last session's choices
   (adapter, key files, upload options, the device table with protocols and images) come back at the next start, the
   rows unchecked so that nothing is flashed by accident. History: SQLite in the user data
-  directory: start / end time, UID, board type, node, adapter, image name / version / hash, result, error, app
-  version, plus the board name it had at that time (names can change later).
+  directory: start / end time, UID, board type, node, adapter, image name / version / hash, result, error (code,
+  parameters and text: shown in the current language), app version, plus the board name it had at that time (names
+  can change later); the History tab shows the newest 1000 jobs.
 
 ## Changes in the umcub host library
 

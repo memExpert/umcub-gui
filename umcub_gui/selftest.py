@@ -8,8 +8,9 @@ import warnings
 from pathlib import Path
 
 # Imported when a device is used, not at start: a build without them starts and fails at the first device.
-LAZY_MODULES = ("smpclient", "isotp", "serial.tools.list_ports", "psutil",
-                "cryptography.hazmat.primitives.asymmetric.ec")
+LAZY_MODULES = ("smpclient", "isotp", "serial.tools.list_ports", "psutil", "umcub.smp",
+                "cryptography.hazmat.primitives.asymmetric.ec", "cryptography.hazmat.primitives.ciphers",
+                "cryptography.hazmat.primitives.serialization", "cryptography.hazmat.primitives.hashes")
 
 
 def missing_can_interfaces():

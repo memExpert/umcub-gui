@@ -555,3 +555,38 @@ def test_settings_saved_are_applied_however_the_dialog_closed(qtbot, qsettings, 
     win.keepalive_timer.start(30000)
     win.open_settings()
     assert not win.discover_button.isVisibleTo(win) and win.keepalive_timer.interval() == 7000
+
+
+def test_slots_of_a_device_no_longer_selected_are_not_shown(qtbot, qsettings, tmp_path, fake_umcub):
+    win = service_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", ""), Row("/dev/ttyUSB0", 6, "", "smp", "")])
+    win.table.selectRow(0)
+    with qtbot.waitSignal(win.job_finished, timeout=10000):
+        win.slots_refresh_button.click()
+        win.table.selectRow(1)                  # before the answer of node 5 arrives
+    assert win.slot_table.rowCount() == 0
+
+
+def test_exchange_log_kept_while_hidden_shows_with_the_developer_tab(qtbot, qsettings, tmp_path):
+    win = service_window(qtbot, qsettings, tmp_path)
+    win.exchange(hello(5, "/dev/ttyUSB0"))
+    win.exchange.flush()
+    assert win.exchange_view.toPlainText() == ""            # hidden tab: not rendered
+    Settings(qsettings).set_role("developer")
+    win.apply_role()
+    assert win.exchange_view.toPlainText().count("HELLO") == 1
+
+
+def test_a_slot_action_failing_on_every_device_is_red(qtbot, qsettings, tmp_path, fake_umcub):
+    from umcub_gui.ui.main_window import COLORS
+    _, answers = fake_umcub
+    answers["verify"] = {5: False, 6: False}
+    win = service_window(qtbot, qsettings, tmp_path)
+    win.set_rows([Row("/dev/ttyUSB0", 5, "", "smp", "", checked=True),
+                  Row("/dev/ttyUSB0", 6, "", "smp", "", checked=True)])
+    win.table.selectRow(0)
+    click(qtbot, win, win.verify_button)
+    assert COLORS[False] in win.result.styleSheet()
+    answers["verify"] = {6: False}
+    click(qtbot, win, win.verify_button)
+    assert COLORS[None] in win.result.styleSheet()          # some failed: orange

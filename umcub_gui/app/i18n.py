@@ -1,6 +1,7 @@
 """Languages: umcub_gui_<lang>.qm built from the Qt Linguist sources (tools/translations.py release) into the package,
 and from the "translations" folder next to the program (a language added without a new build; it wins over the built
 one). English is the source language. Library errors are translated by their template (error_texts.py)."""
+import json
 import os
 import sys
 from pathlib import Path
@@ -50,6 +51,17 @@ def install(app, setting):
             app.installTranslator(t)
             _installed.append(t)
     return lang
+
+
+def record_error(r):
+    """A history record's error in the current language: from its code and params when it was a library error,
+    else the text stored then."""
+    if r.error_code in umcub.errors.MESSAGES and r.error_params:
+        try:
+            return message(umcub.UmcubError(code=r.error_code, **json.loads(r.error_params)))
+        except (ValueError, TypeError):
+            pass
+    return r.error_text
 
 
 def message(e):

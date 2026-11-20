@@ -2,11 +2,12 @@
 
 A job uses the connection Connect keeps open (Connections), or opens its own and closes it when done.
 """
+import json
 import os
 import threading
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import umcub
 from PySide6.QtCore import QCoreApplication, QObject, Signal
@@ -41,6 +42,7 @@ class Result:
     cancelled: bool = False
     error_code: str = ""        # UmcubError code, for translations
     error_text: str = ""        # English text, the fallback
+    error_params: dict = field(default_factory=dict)    # the library error's params (history: shown translated)
 
 
 class Signals(QObject):
@@ -62,9 +64,9 @@ class Job:
         try:
             res = Result(True, self.run())
         except umcub.Cancelled as e:
-            res = Result(False, cancelled=True, error_code=e.code, error_text=i18n.message(e))
+            res = Result(False, cancelled=True, error_code=e.code, error_text=i18n.message(e), error_params=e.params)
         except umcub.UmcubError as e:
-            res = Result(False, error_code=e.code, error_text=i18n.message(e))
+            res = Result(False, error_code=e.code, error_text=i18n.message(e), error_params=e.params)
         except Exception as e:          # e.g. OSError of an adapter unplugged mid-transfer: still a finished job
             res = Result(False, error_code="error", error_text=error_text(e))
         try:
@@ -89,9 +91,18 @@ def error_text(e):
 
 def connect_target(t, conn=None, tap=None):
     """umcub.connect() of a target, over `conn` (an open port) or its own connection (with `tap`, the exchange log).
-    A node address selects the device; the UID only one without an address (the library prefers the UID)."""
-    return umcub.connect(conn or t.spec, node=t.node, uid=(t.uid or None) if t.node is None else None,
-                         admin_key=t.admin_key or None, device_key=t.device_key or None, tap=tap)
+    A node address selects the device; the UID only one without an address (the library prefers the UID). The keys
+    go only where a umcub link session can use them: the library refuses them without a node or UID, and on an
+    adapter that selects the node itself: CAN (its IDs) gets none, a plugin's is connected again without them."""
+    uid = (t.uid or None) if t.node is None else None
+    if (t.admin_key or t.device_key) and (t.node is not None or uid is not None) and not t.spec.startswith("can:"):
+        try:
+            return umcub.connect(conn or t.spec, node=t.node, uid=uid, admin_key=t.admin_key or None,
+                                 device_key=t.device_key or None, tap=tap)
+        except umcub.UmcubError as e:
+            if e.code != "link.keys_unused":
+                raise
+    return umcub.connect(conn or t.spec, node=t.node, uid=uid, tap=tap)
 
 
 @contextmanager
@@ -216,4 +227,4 @@ class FlashJob(CancellableJob):
             image_name=os.path.basename(self.image_path), image_version=self.img.version,
             image_hash=self.img.hash.hex(), result="ok" if res.ok else "cancelled" if res.cancelled else "error",
             checked=res.value if res.ok else None, error_code=res.error_code, error_text=res.error_text,
-            app_version=__version__))
+            app_version=__version__, error_params=json.dumps(res.error_params, default=str)))

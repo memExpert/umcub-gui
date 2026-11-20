@@ -289,9 +289,37 @@
         <source>connected</source>
         <translation>подключено</translation>
     </message>
+    <message numerus="yes">
+        <source>%n ok</source>
+        <translation>
+            <numerusform>%n успешно</numerusform>
+            <numerusform>%n успешно</numerusform>
+            <numerusform>%n успешно</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n failed</source>
+        <translation>
+            <numerusform>%n с ошибкой</numerusform>
+            <numerusform>%n с ошибкой</numerusform>
+            <numerusform>%n с ошибкой</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n cancelled</source>
+        <translation>
+            <numerusform>%n отменено</numerusform>
+            <numerusform>%n отменено</numerusform>
+            <numerusform>%n отменено</numerusform>
+        </translation>
+    </message>
     <message>
         <source>connected (no link identity)</source>
         <translation>подключено (без данных link)</translation>
+    </message>
+    <message>
+        <source>encrypted</source>
+        <translation>шифрование</translation>
     </message>
     <message>
         <source>{0} of {1} connected</source>
@@ -344,14 +372,6 @@
     <message>
         <source>uid {0}</source>
         <translation>uid {0}</translation>
-    </message>
-    <message>
-        <source>{0} ok, {1} failed</source>
-        <translation>успешно {0}, с ошибкой {1}</translation>
-    </message>
-    <message>
-        <source>, {0} cancelled</source>
-        <translation>, отменено {0}</translation>
     </message>
     <message>
         <source>active</source>
@@ -426,6 +446,10 @@
         <translation>{0}: успешно {1} из {2}</translation>
     </message>
     <message>
+        <source>{0}: no slots with lite</source>
+        <translation>{0}: у lite нет слотов</translation>
+    </message>
+    <message>
         <source>Read slot {0}/{1} to</source>
         <translation>Прочитать слот {0}/{1} в</translation>
     </message>
@@ -456,6 +480,18 @@
     <message>
         <source>A job is still running. Stop it and close?</source>
         <translation>Задача ещё выполняется. Остановить её и закрыть программу?</translation>
+    </message>
+    <message>
+        <source>plain</source>
+        <translation>простой</translation>
+    </message>
+    <message>
+        <source>addressed</source>
+        <translation>адресный</translation>
+    </message>
+    <message>
+        <source>secure</source>
+        <translation>защищённый</translation>
     </message>
     <message>
         <source>node {0}   uid {1}   {2}   {3}</source>
@@ -548,6 +584,14 @@
         <translation>SMP: {reason}</translation>
     </message>
     <message>
+        <source>a hash of a range needs UMCUB_CFG_READBACK (and UMCUB_CFG_INSPECT_HASH) in the bootloader (rc {rc})</source>
+        <translation>для хеша диапазона загрузчику нужен UMCUB_CFG_READBACK (и UMCUB_CFG_INSPECT_HASH) (rc {rc})</translation>
+    </message>
+    <message>
+        <source>a tap for a connection the program opened: give it to open_connection() or add_tap()</source>
+        <translation>перехват для соединения, открытого программой: передайте его в open_connection() или add_tap()</translation>
+    </message>
+    <message>
         <source>a test boot / permanent mark needs the secondary slot</source>
         <translation>для отметки пробной / постоянной загрузки нужен дополнительный слот</translation>
     </message>
@@ -608,6 +652,10 @@
         <translation>выберите устройство по адресу узла или UID</translation>
     </message>
     <message>
+        <source>serve: {host} is not a loopback address - a SECURE session would be open to anyone who reaches the port (use 127.0.0.1, or the pseudo terminal)</source>
+        <translation>serve: {host} - не локальный адрес, SECURE-сессия была бы открыта всем, кто достучится до порта (используйте 127.0.0.1 или псевдотерминал)</translation>
+    </message>
+    <message>
         <source>signed image without a hash TLV</source>
         <translation>подписанный образ без TLV хеша</translation>
     </message>
@@ -654,6 +702,10 @@
     <message>
         <source>upload refused: {reason} (rc {rc})</source>
         <translation>загрузка отклонена: {reason} (rc {rc})</translation>
+    </message>
+    <message>
+        <source>{name}: keys given, but no SECURE umcub link session here (a CAN node is selected by its IDs; on serial / UDP give --node or --uid)</source>
+        <translation>{name}: ключи заданы, но здесь нет SECURE-сессии umcub link (узел CAN выбирается своими ID; для последовательного порта / UDP укажите узел или UID)</translation>
     </message>
     <message>
         <source>{name}: the node is selected by its address, not by UID</source>

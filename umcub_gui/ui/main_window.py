@@ -16,6 +16,7 @@ from .. import __version__
 from ..app import i18n
 from ..app.batch import BatchJob, Row
 from ..app.connections import Connections
+from ..app.devices import image_check, match_discovered
 from ..app.exchange import ExchangeLog, line
 from ..app.jobs import AdaptersJob, DiscoverJob, FlashOptions, KeepaliveJob, OpenJob, Target, TextJob
 from ..app.settings import Session
@@ -24,6 +25,7 @@ from .settings_dialog import SettingsDialog
 
 # ok True / False / None (a warning): green, red, orange
 COLORS = {True: "#1a7f37", False: "#cf222e", None: "#bc4c00"}
+HISTORY_ROWS = 1000                # the newest jobs shown; the database keeps all of them
 IMAGE_ROLE = Qt.ItemDataRole.UserRole
 
 
@@ -190,8 +192,9 @@ class MainWindow(QMainWindow):
         return out
 
     def _show_events(self, events):
-        if self.pause_button.isChecked():
-            return                              # kept in the log; Pause off does not bring them back (Save does)
+        if self.pause_button.isChecked() or not self.tabs.isTabVisible(2):
+            return                              # kept in the log; Pause off does not bring them back (Save does),
+                                                # the developer tab renders them when it is shown
         lines = self._lines(events)
         if lines:
             self.exchange_view.appendPlainText("\n".join(lines))
@@ -414,25 +417,20 @@ class MainWindow(QMainWindow):
         spec = self.adapter_spec()
 
         def done(devices):
-            rows = self.rows()
-            # a known row: the same node on this adapter, or the same UID for a device without an address
-            known = {(r.spec, r.node if r.node is not None else r.uid): i for i, r in enumerate(rows)}
-            found = set()
-            for d in devices:            # link identities (serial / UDP) or {"addr", "protocol"} (CAN)
-                node, uid = (d["addr"] or None if "uid" in d else d["addr"]), d.get("uid", "")
-                i = known.get((spec, node if node is not None else uid))
+            found, missing = match_discovered(spec, self.rows(), devices)
+            for f in found:
+                i = f.index
                 if i is None:
                     i = self.table.rowCount()
-                    self._append(Row(spec, node, uid, d.get("protocol", "smp"), ""))
-                elif uid:
-                    self.table.item(i, self.COL_UID).setText(uid)
+                    self._append(Row(spec, f.node, f.uid, f.protocol, ""))
+                elif f.uid:
+                    self.table.item(i, self.COL_UID).setText(f.uid)
+                d = f.identity
                 if "board_type" in d:
                     self.table.item(i, self.COL_BOARD).setText(umcub.board_label(d["board_type"]))
                 self._set_status(i, True, self.tr("found") + (f": {_version(d)}" if "version" in d else ""))
-                found.add(i)
-            for i, r in enumerate(rows):
-                if r.spec == spec and i not in found:
-                    self._set_status(i, None, self.tr("not found"))
+            for i in missing:
+                self._set_status(i, None, self.tr("not found"))
             if devices:
                 self.show_result(True, self.tr("%n device(s)", "", len(devices)))
             else:
@@ -557,8 +555,8 @@ class MainWindow(QMainWindow):
         ok = sum(r.ok for r in results)
         cancelled = sum(r.cancelled for r in results)
         failed = len(self.failed) - cancelled
-        text = self.tr("{0} ok, {1} failed").format(ok, failed) + \
-            (self.tr(", {0} cancelled").format(cancelled) if cancelled else "")
+        text = self.tr("%n ok", "", ok) + ", " + self.tr("%n failed", "", failed) + \
+            (", " + self.tr("%n cancelled", "", cancelled) if cancelled else "")
         self.show_result(not self.failed, text)
         self._set_busy(False)
         self.reload_history()
@@ -570,6 +568,8 @@ class MainWindow(QMainWindow):
         role = self.settings.role()
         self.discover_button.setVisible(role != "customer")
         self.tabs.setTabVisible(1, role != "customer")             # history
+        if role == "developer" and not self.tabs.isTabVisible(2):
+            self._render_log()                  # events kept while the tab was hidden
         self.tabs.setTabVisible(2, role == "developer")
         self.slot_panel.setVisible(role in ("service", "developer"))
 
@@ -616,7 +616,11 @@ class MainWindow(QMainWindow):
         return int(self.slot_table.item(k, 0).text()), int(self.slot_table.item(k, 1).text())
 
     def refresh_slots(self):
+        row = self.table.currentRow()
+
         def done(images):
+            if self.table.currentRow() != row:
+                return                          # another device is selected now: these are not its slots
             self.slot_table.setRowCount(len(images))
             names = {"active": self.tr("active"), "confirmed": self.tr("confirmed"), "pending": self.tr("pending"),
                      "permanent": self.tr("permanent"), "bootable": self.tr("bootable")}
@@ -625,7 +629,7 @@ class MainWindow(QMainWindow):
                 for col, text in enumerate((str(s["image"]), str(s["slot"]), s["version"], s["hash"].hex(), flags)):
                     self.slot_table.setItem(k, col, QTableWidgetItem(text))
             self.show_result(True, self.tr("%n slot(s)", "", len(images)))
-        self._run(SlotsJob(self._target(self.rows()[self.table.currentRow()]), self.connections), done)
+        self._run(SlotsJob(self._target(self.rows()[row]), self.connections), done)
 
     def slot_action(self, action):
         rows = self.rows()
@@ -651,9 +655,12 @@ class MainWindow(QMainWindow):
             for i, ok, code in results:             # a code, or a library error's text
                 self._set_status(i, ok, self.tr("slot {0}/{1}: {2}").format(image, slot, texts.get(code, code)))
             n = sum(ok is True for _, ok, _ in results)
-            self.show_result(n == len(picked) or None,
+            self.show_result(True if n == len(picked) else None if n else False,
                              self.tr("{0}: {1} of {2} ok").format(names[action], n, len(picked)))
         items = [(i, self._target(rows[i]), rows[i].image) for i in picked if i not in lite]
+        if not items:                           # only lite rows: nothing to ask
+            self.show_result(False, self.tr("{0}: no slots with lite").format(names[action]))
+            return
         self._run(SlotActionJob(items, action, image, slot, self.connections), done)
 
     def read_slot(self):
@@ -672,29 +679,23 @@ class MainWindow(QMainWindow):
     def _show_image(self):
         i = self.table.currentRow()
         path = self._image(i) if i >= 0 else ""
-        try:
-            img = umcub.Image.load(path)
-        except umcub.UmcubError as e:
-            self.image_info.setText(i18n.message(e) if path else "")
+        dev = self._device(i)
+        img, err = image_check(path, dev.identity["board_type"] if dev is not None and dev.identity else None)
+        if img is None:
+            self.image_info.setText(i18n.message(err) if path else "")
             return
         text = f"{img.version}   " + (self.tr("board {0}").format(umcub.board_label(img.board_type))
                                       if img.board_type is not None else self.tr("no board type"))
-        dev = self._device(i)
-        if dev is not None and dev.identity:
-            try:
-                img.check_board(dev.identity["board_type"])
-            except umcub.UmcubError as e:
-                text += "   " + i18n.message(e)
-        self.image_info.setText(text)
+        self.image_info.setText(text + ("   " + i18n.message(err) if err else ""))
 
     def reload_history(self):
-        rows = self.history.records()
+        rows = self.history.records(limit=HISTORY_ROWS)
         results = {"ok": self.tr("ok"), "error": self.tr("error"), "cancelled": self.tr("cancelled")}
         self.history_table.setRowCount(len(rows))
         for i, r in enumerate(rows):
             cells = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r.started)), results.get(r.result, r.result),
                      r.board, r.uid, "" if r.node is None else str(r.node), r.adapter, r.image_name, r.image_version,
-                     self._checked(r.checked) if r.result == "ok" else "", r.error_text)
+                     self._checked(r.checked) if r.result == "ok" else "", i18n.record_error(r))
             for j, c in enumerate(cells):
                 self.history_table.setItem(i, j, QTableWidgetItem(c))
         self.history_table.resizeColumnsToContents()
@@ -740,12 +741,15 @@ def _progress(bar, done, total):
 
 def _version(i):
     """"umcub 1.0.0, addressed" of a link identity."""
-    return f"umcub {i['version']}, {umcub.LINK_NAMES.get(i['link'], '?')}"
+    names = {0: QCoreApplication.translate("MainWindow", "plain"), 1: QCoreApplication.translate("MainWindow", "addressed"),
+             2: QCoreApplication.translate("MainWindow", "secure")}
+    return f"umcub {i['version']}, {names.get(i['link'], '?')}"
 
 
 def _describe(i):
     return (QCoreApplication.translate("MainWindow", "node {0}   uid {1}   {2}   {3}").format(
-        i["addr"], i["uid"], umcub.board_label(i["board_type"]), _version(i)) + ("   SECURE" if i.get("enc") else ""))
+        i["addr"], i["uid"], umcub.board_label(i["board_type"]), _version(i)) +
+        ("   " + QCoreApplication.translate("MainWindow", "encrypted") if i.get("enc") else ""))
 
 
 def _row(*widgets):

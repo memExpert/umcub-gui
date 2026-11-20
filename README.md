@@ -8,10 +8,11 @@ nodes, each row with its UID, board and "found" / "not found") or by hand, each 
 the checked rows are flashed with progress per row, the devices of one serial port in turn and CAN / UDP devices in
 parallel, then each device checks its image (failed rows can be retried). Connect keeps the checked devices
 connected (a SECURE session authenticated once, the devices of a serial port sharing it) until Disconnect, pinging
-them so the sessions stay open and lost devices show. Shared settings: adapter, SECURE key files, slot, test /
-permanent mark, reset. A history tab (SQLite in the user data folder); the last session, table included, comes back
-at the next start with no row checked; Settings holds the board name files, the plugin folder, the keepalive
-interval, the role and the language (the system's by default; English and Russian, at the next start).
+them so the sessions stay open and lost devices show. Shared settings: adapter, SECURE key files (umcub link rows),
+slot, test / permanent mark, reset. A history tab (SQLite in the user data folder; it shows the newest 1000 jobs);
+the last session, table included, comes back at the next start with no row checked; Settings holds the board name
+files, the plugin folder, the keepalive interval, the role and the language (the system's by default; English and
+Russian, at the next start).
 
 Roles only shape the window: customer flashes; operator also discovers and sees the history; service adds the slot
 panel - the image slots of the selected device, verify, hash against the row's image, test boot / permanent marks
@@ -24,7 +25,7 @@ save, the selected device only) and a text console to the selected device.
 - Linux and Windows; Python, Qt (PySide6).
 - All device logic lives in the umcub host library (`tools/host` of the umcub repository); this repository holds the
   UI and the application layer only.
-- Uses the host library of the tag pinned in `pyproject.toml` (now `host-v0.5.2`); its lite uploads need a
+- Uses the host library of the tag pinned in `pyproject.toml` (now `host-v0.5.3`); its lite uploads need a
   bootloader newer than umcub 1.0.0.
 
 ## Install
