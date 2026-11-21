@@ -35,6 +35,7 @@ TEXTS = (
     QT_TRANSLATE_NOOP("UmcubError", 'the image has no board type, the device is {device}'),
     QT_TRANSLATE_NOOP("UmcubError", 'the image is for board type {image}, the device is {device}'),
     QT_TRANSLATE_NOOP("UmcubError", 'the image on the device differs from the file (SHA-256)'),
+    QT_TRANSLATE_NOOP("UmcubError", "the image's TLV area is cut short or malformed (a file cut short?)"),
     QT_TRANSLATE_NOOP("UmcubError", "transport '{scheme}' is already registered"),
     QT_TRANSLATE_NOOP("UmcubError", "transport '{scheme}' returned {type}, not a umcub Connection"),
     QT_TRANSLATE_NOOP("UmcubError", "transport scheme '{scheme}': lower-case letters, digits, '-' and '_'"),

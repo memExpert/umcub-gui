@@ -688,6 +688,10 @@
         <translation>образ на устройстве отличается от файла (SHA-256)</translation>
     </message>
     <message>
+        <source>the image&apos;s TLV area is cut short or malformed (a file cut short?)</source>
+        <translation>область TLV образа обрезана или повреждена (файл обрезан?)</translation>
+    </message>
+    <message>
         <source>transport &apos;{scheme}&apos; is already registered</source>
         <translation>транспорт &apos;{scheme}&apos; уже зарегистрирован</translation>
     </message>
