@@ -33,6 +33,7 @@ TEXTS = (
     QT_TRANSLATE_NOOP("UmcubError", 'the answer to the end frame was lost and its repeat was refused: the upload may have ended; check the slot (umcub verify)'),
     QT_TRANSLATE_NOOP("UmcubError", 'the device reports the uploaded image invalid (hash, signature or board type)'),
     QT_TRANSLATE_NOOP("UmcubError", 'the image has no board type, the device is {device}'),
+    QT_TRANSLATE_NOOP("UmcubError", "the image header size {size} is below MCUboot's 32 bytes"),
     QT_TRANSLATE_NOOP("UmcubError", 'the image is for board type {image}, the device is {device}'),
     QT_TRANSLATE_NOOP("UmcubError", 'the image on the device differs from the file (SHA-256)'),
     QT_TRANSLATE_NOOP("UmcubError", "the image's TLV area is cut short or malformed (a file cut short?)"),

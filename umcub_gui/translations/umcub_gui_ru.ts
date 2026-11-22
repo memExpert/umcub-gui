@@ -680,6 +680,10 @@
         <translation>у образа нет типа платы, устройство: {device}</translation>
     </message>
     <message>
+        <source>the image header size {size} is below MCUboot&apos;s 32 bytes</source>
+        <translation>размер заголовка образа {size} меньше 32 байт, которых требует MCUboot</translation>
+    </message>
+    <message>
         <source>the image is for board type {image}, the device is {device}</source>
         <translation>образ для типа платы {image}, устройство: {device}</translation>
     </message>
