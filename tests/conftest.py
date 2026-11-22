@@ -211,14 +211,15 @@ def fake_umcub(monkeypatch):
 
 @pytest.fixture
 def signed_image(tmp_path):
-    """A small signed MCUboot image file, 1.2.3 for board type 0x46103001 (header, payload, SHA-256 and board type
-    TLVs)."""
+    """A small signed MCUboot image file, 1.2.3 for board type 0x46103001 (header, payload, the board type in the
+    protected TLV area as the bootloader reads it, the SHA-256 TLV)."""
     import hashlib
     import struct
 
     payload = b"\x11" * 256
-    tlvs = struct.pack("<HH", 0x10, 32) + hashlib.sha256(payload).digest() + struct.pack("<HHI", 0xA0, 4, 0x46103001)
-    hdr = struct.pack("<IIHHIIBBHI", 0x96F3B83D, 0, 32, 0, len(payload), 0, 1, 2, 3, 0)
+    prot = struct.pack("<HH", 0x6908, 12) + struct.pack("<HHI", 0xA0, 4, 0x46103001)
+    tlvs = struct.pack("<HH", 0x10, 32) + hashlib.sha256(payload).digest()
+    hdr = struct.pack("<IIHHIIBBHI", 0x96F3B83D, 0, 32, len(prot), len(payload), 0, 1, 2, 3, 0)
     path = tmp_path / "app.signed.bin"
-    path.write_bytes(hdr.ljust(32, b"\0") + payload + struct.pack("<HH", 0x6907, 4 + len(tlvs)) + tlvs)
+    path.write_bytes(hdr.ljust(32, b"\0") + payload + prot + struct.pack("<HH", 0x6907, 4 + len(tlvs)) + tlvs)
     return path
