@@ -41,6 +41,16 @@ def test_last_session_restored(qtbot, qsettings, tmp_path):
     assert win.rows() == [replace(r, checked=False) for r in rows]     # nothing is flashed by accident
 
 
+def test_a_secure_node_found_without_its_version(qtbot, qsettings, tmp_path, fake_umcub):
+    _, answers = fake_umcub     # a SECURE device keeps board revision and version for the session
+    answers["devices"] = [dict(addr=5, uid="00" * 12, board_type=0x46103001,
+                               **{**LINK, "link": 2, "enc": True, "board_rev": None, "version": None})]
+    win = window(qtbot, qsettings, tmp_path)
+    win.adapter.setEditText("/dev/ttyUSB1")
+    click(qtbot, win, win.discover_button)
+    assert win.status(0) == "found: secure"
+
+
 def test_discover_link_fills_the_table(qtbot, qsettings, tmp_path, fake_umcub):
     _, answers = fake_umcub
     answers["devices"] = [dict(addr=5, uid="00" * 12, board_type=0x46103001, **LINK),

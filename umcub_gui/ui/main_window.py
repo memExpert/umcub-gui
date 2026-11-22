@@ -740,10 +740,11 @@ def _progress(bar, done, total):
 
 
 def _version(i):
-    """"umcub 1.0.0, addressed" of a link identity."""
+    """"umcub 1.0.0, addressed" of a link identity; a SECURE device found but not connected: "secure" (it sends its
+    version inside the session only)."""
     names = {0: QCoreApplication.translate("MainWindow", "plain"), 1: QCoreApplication.translate("MainWindow", "addressed"),
              2: QCoreApplication.translate("MainWindow", "secure")}
-    return f"umcub {i['version']}, {names.get(i['link'], '?')}"
+    return (f"umcub {i['version']}, " if i["version"] else "") + names.get(i["link"], "?")
 
 
 def _describe(i):
