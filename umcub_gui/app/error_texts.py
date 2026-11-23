@@ -27,6 +27,7 @@ TEXTS = (
     QT_TRANSLATE_NOOP("UmcubError", 'not a signed MCUboot image (no header magic)'),
     QT_TRANSLATE_NOOP("UmcubError", "option '{option}': bad value '{value}'"),
     QT_TRANSLATE_NOOP("UmcubError", 'read cancelled'),
+    QT_TRANSLATE_NOOP("UmcubError", 'readback answer does not fit the request (offset {off}: {got} bytes for {want})'),
     QT_TRANSLATE_NOOP("UmcubError", 'select the device by node address or UID'),
     QT_TRANSLATE_NOOP("UmcubError", 'serve: {host} is not a loopback address - a SECURE session would be open to anyone who reaches the port (use 127.0.0.1, or the pseudo terminal)'),
     QT_TRANSLATE_NOOP("UmcubError", 'signed image without a hash TLV'),

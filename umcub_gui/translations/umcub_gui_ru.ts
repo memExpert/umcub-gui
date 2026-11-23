@@ -684,6 +684,10 @@
         <translation>размер заголовка образа {size} меньше 32 байт, которых требует MCUboot</translation>
     </message>
     <message>
+        <source>readback answer does not fit the request (offset {off}: {got} bytes for {want})</source>
+        <translation>ответ на чтение не соответствует запросу (смещение {off}: {got} байт вместо {want})</translation>
+    </message>
+    <message>
         <source>the image is for board type {image}, the device is {device}</source>
         <translation>образ для типа платы {image}, устройство: {device}</translation>
     </message>
