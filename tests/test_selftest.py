@@ -45,3 +45,24 @@ def test_self_test_reports_missing_translations(monkeypatch, tmp_path):
     from umcub_gui.app import i18n
     monkeypatch.setattr(i18n, "BUILTIN", tmp_path)
     assert any("translations" in f for f in selftest.run())
+
+
+def test_candlelight_libusb_checked_on_windows_only(monkeypatch, tmp_path):
+    """Windows: the gs_usb modules and the libusb-1.0.dll of the libusb1 package (without it pyusb searches its own,
+    which crashed) must be in the build; elsewhere SocketCAN lists candleLight adapters and nothing is checked."""
+    import types
+    pkg = tmp_path / "usb1"
+    pkg.mkdir()
+    for name, module in (("usb1", types.SimpleNamespace(__file__=str(pkg / "__init__.py"))),
+                         ("gs_usb", types.ModuleType("gs_usb")), ("gs_usb.gs_usb", types.ModuleType("gs_usb.gs_usb")),
+                         ("usb", types.ModuleType("usb")), ("usb.backend", types.ModuleType("usb.backend")),
+                         ("usb.backend.libusb1", types.ModuleType("usb.backend.libusb1"))):
+        monkeypatch.setitem(sys.modules, name, module)
+    selftest.candlelight_libusb(platform="linux")               # nothing to check
+    try:
+        selftest.candlelight_libusb(platform="win32")
+        raise AssertionError("a missing libusb-1.0.dll must fail")
+    except RuntimeError as e:
+        assert "libusb-1.0.dll" in str(e)
+    (pkg / "libusb-1.0.dll").write_bytes(b"")
+    selftest.candlelight_libusb(platform="win32")

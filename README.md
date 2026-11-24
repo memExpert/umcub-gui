@@ -25,7 +25,7 @@ save, the selected device only) and a text console to the selected device.
 - Linux and Windows; Python, Qt (PySide6).
 - All device logic lives in the umcub host library (`tools/host` of the umcub repository); this repository holds the
   UI and the application layer only.
-- Uses the host library of the tag pinned in `pyproject.toml` (now `host-v0.6.9`); its lite uploads need a
+- Uses the host library of the tag pinned in `pyproject.toml` (now `host-v0.6.10`); its lite uploads need a
   bootloader newer than umcub 1.0.0.
 
 ## Install
@@ -62,7 +62,8 @@ To work on the host library at the same time: `pip install -e ../umcub/tools/hos
 Release: set `__version__` in `umcub_gui/__init__.py` (the package version too), commit, push a tag `v<version>`;
 the Release workflow compiles the translations, builds the Windows zip and the Linux AppImage (PyInstaller,
 `packaging/`), runs `umcub-gui --self-test` in each - every module loaded by name, python-can's interfaces, the
-window, the translations - and publishes them. Run it by hand from the Actions tab to try a build without a release.
+adapter lists, on Windows candleLight's libusb DLL, the window, the translations - and publishes them.
+Run it by hand from the Actions tab to try a build without a release.
 Locally, in a venv with the program installed (`pip install . pyinstaller`, not `-e`):
 `python tools/translations.py release`, then `pyinstaller --noconfirm packaging/umcub-gui.spec`.
 

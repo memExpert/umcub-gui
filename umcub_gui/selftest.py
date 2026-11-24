@@ -1,8 +1,11 @@
 """--self-test: the packaged program (PyInstaller) checks what a build can leave out - modules imported by name or
-only when a device is used, python-can's interfaces, the Qt platform and the window - and lists what failed. CI runs
-it on every build; the development tree passes it too (tests/test_selftest.py)."""
+only when a device is used, python-can's interfaces, candleLight's libusb DLL (Windows), the adapter lists, the Qt
+platform and the window - and lists what failed. CI runs it on every build; the development tree passes it too
+(tests/test_selftest.py)."""
 import importlib
 import logging
+import os
+import sys
 import tempfile
 import warnings
 from pathlib import Path
@@ -54,6 +57,19 @@ def _adapters():
         raise RuntimeError("; ".join(errors))
 
 
+def candlelight_libusb(platform=sys.platform):
+    """Windows: candleLight adapters (python-can's gs_usb) need these modules and the libusb-1.0.dll of the libusb1
+    package; without the DLL pyusb searches its own (umcub.adapter.prime_libusb). Elsewhere: SocketCAN, nothing."""
+    if platform != "win32":
+        return
+    for m in ("gs_usb.gs_usb", "usb.backend.libusb1"):
+        importlib.import_module(m)
+    import usb1
+    dll = os.path.join(os.path.dirname(usb1.__file__), "libusb-1.0.dll")
+    if not os.path.isfile(dll):
+        raise RuntimeError(f"no {dll}")
+
+
 _qapp = None
 
 
@@ -103,8 +119,8 @@ def run():
             importlib.import_module(m)
         except Exception as e:
             failures.append(f"module {m}: {type(e).__name__}: {e}")
-    for name, step in (("CAN", _can), ("umcub.adapters()", _adapters), ("window", _window),
-                       ("translations", _translations)):
+    for name, step in (("CAN", _can), ("candleLight", candlelight_libusb), ("umcub.adapters()", _adapters),
+                       ("window", _window), ("translations", _translations)):
         try:
             step()
         except Exception as e:
